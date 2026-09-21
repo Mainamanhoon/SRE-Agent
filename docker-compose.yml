@@ -1,0 +1,126 @@
+services:
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.20.0
+    ports:
+      - "16686:16686"
+
+  otel-collector:
+    build:
+      context: ./Backend/services/otel-collector
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "13133:13133"
+    depends_on:
+      - jaeger
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: sre_agent
+      POSTGRES_USER: sre_agent
+      POSTGRES_PASSWORD: sre_agent_local
+    ports:
+      - "5432:5432"
+    volumes:
+      - sre_agent_postgres:/var/lib/postgresql/data
+      - ./Backend/services/incident-service/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sre_agent -d sre_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:1.28.1
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: sre_agent
+      POSTGRES_PWD: sre_agent_local
+      POSTGRES_SEEDS: postgres
+    ports:
+      - "7233:7233"
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "temporal:7233"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  control-api:
+    build:
+      context: .
+      dockerfile: Backend/services/control-api/Dockerfile
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      SERVICE_NAME: control-api
+      SERVICE_VERSION: local
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      INCIDENT_DETECTOR_URL: http://incident-detector:4010
+      INCIDENT_SERVICE_URL: http://incident-service:4020
+      TEMPORAL_ADDRESS: temporal:7233
+    ports:
+      - "4000:4000"
+    depends_on:
+      - incident-detector
+      - incident-service
+      - otel-collector
+
+  incident-detector:
+    build:
+      context: ./Backend/services/incident-detector
+    environment:
+      HTTP_ADDRESS: :4010
+      SERVICE_VERSION: local
+    ports:
+      - "4010:4010"
+
+  incident-service:
+    build:
+      context: ./Backend/services/incident-service
+    environment:
+      HTTP_ADDRESS: :4020
+      SERVICE_VERSION: local
+      DATABASE_URL: postgres://sre_agent:sre_agent_local@postgres:5432/sre_agent?sslmode=disable
+    ports:
+      - "4020:4020"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  repair-worker:
+    build:
+      context: .
+      dockerfile: Backend/services/repair-worker/Dockerfile
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: repair-workflows
+      TEMPORAL_CONNECT_MAX_ATTEMPTS: 30
+      SERVICE_VERSION: local
+    depends_on:
+      temporal:
+        condition: service_healthy
+
+  sandbox-controller:
+    profiles: ["kubernetes"]
+    build:
+      context: ./Backend/services/sandbox-controller
+    environment:
+      HTTP_ADDRESS: :4030
+      SERVICE_VERSION: local
+      SANDBOX_NAMESPACE: sre-agent-sandboxes
+      SANDBOX_RUNTIME_CLASS: gvisor
+    ports:
+      - "4030:4030"
+    volumes:
+      - ${KUBECONFIG:-~/.kube/config}:/home/nonroot/.kube/config:ro
+
+volumes:
+  sre_agent_postgres:

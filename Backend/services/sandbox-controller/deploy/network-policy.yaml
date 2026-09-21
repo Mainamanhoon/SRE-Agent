@@ -1,0 +1,12 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: repair-sandbox-default-deny
+  namespace: sre-agent-sandboxes
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: repair-sandbox
+  policyTypes:
+    - Ingress
+    - Egress

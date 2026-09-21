@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+.env
+.env.local
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+tmp/
+artifacts/

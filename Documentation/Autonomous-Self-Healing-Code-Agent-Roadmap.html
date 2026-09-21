@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Autonomous Self-Healing Code Agent â€” Professional Project Roadmap</title>
+<style>
+@page { size: A4; margin: 20mm 18mm 20mm 18mm; }
+body { font-family: Arial, sans-serif; color: #20252b; font-size: 10.5pt; line-height: 1.42; max-width: 780px; margin: 0 auto; }
+h1 { color: #143a67; font-size: 25pt; line-height: 1.15; margin: 0 0 18pt; }
+h2 { color: #143a67; font-size: 17pt; line-height: 1.2; margin: 22pt 0 7pt; page-break-after: avoid; }
+h3 { color: #344b64; font-size: 13pt; line-height: 1.2; margin: 16pt 0 5pt; page-break-after: avoid; }
+p { margin: 0 0 8pt; }
+ul { margin: 3pt 0 10pt 20pt; padding: 0; }
+li { margin: 0 0 3pt; }
+pre { background: #f2f4f6; border-left: 4px solid #5078a7; padding: 10pt; margin: 8pt 0 12pt; white-space: pre-wrap; font-family: Consolas, monospace; font-size: 8.5pt; line-height: 1.3; }
+code { font-family: Consolas, monospace; background: #f2f4f6; padding: 1px 3px; }
+a { color: #0b57d0; text-decoration: underline; }
+</style>
+</head>
+<body>
+<h1>Autonomous Self-Healing Code Agent</h1>
+<h2>Professional architecture, engineering roadmap, safety model, evaluation harness, and implementation plan</h2>
+<h3>Project objective</h3>
+<p>Build an evidence-driven Site Reliability Engineering agent that detects production incidents, correlates telemetry with the exact deployed source code, reproduces failures in isolation, creates constrained patches, verifies them, and opens reviewable draft pull requests.</p>
+<p>The first professional release should stop at automated draft pull requests. Automatic merge and deployment belong to later maturity levels because they require stronger evidence, policy, rollback, and organizational controls.</p>
+<h2>1. Product principles</h2>
+<p>This project succeeds only when it reduces incident response time without trading away reliability. The agent must decline a patch when the evidence points to infrastructure, configuration, invalid data, capacity, security policy, or an external dependency.</p>
+<ul>
+<li>Evidence before modification</li>
+<li>Exact deployed revision before repository analysis</li>
+<li>Reproduction before claiming a fix</li>
+<li>Tests before pull-request creation</li>
+<li>Least privilege for every tool and integration</li>
+<li>Immutable audit records for every decision and action</li>
+<li>Explicit abstention when evidence is weak</li>
+<li>Human review before merge during the portfolio and initial production stages</li>
+</ul>
+<h2>2. Target architecture</h2>
+<h3>End-to-end flow</h3>
+<pre><code>
+Microservices
+  → OTLP traces, logs, and metrics
+OpenTelemetry Collector
+  → Trace backend: Jaeger or Tempo
+  → Incident detector
+Incident detector
+  → Normalize, enrich, fingerprint, deduplicate, and score
+Incident store + durable workflow engine
+  → Repository context engine
+  → Model gateway and agent harness
+  → MCP tool server
+Disposable repair sandbox
+  → Reproduce → Patch → Verify → Risk review
+GitHub App
+  → Draft pull request + check run + evidence
+</code></pre>
+<h3>Architectural planes</h3>
+<ul>
+<li>Detection: decide whether telemetry represents a real incident that deserves investigation.</li>
+<li>Investigation: correlate the incident with the exact deployed code and collect relevant evidence.</li>
+<li>Repair: reproduce and patch the issue inside a disposable workspace.</li>
+<li>Governance: verify, explain, audit, and publish a controlled pull request.</li>
+</ul>
+<h2>3. Recommended technology stack</h2>
+<ul>
+<li>Core application: TypeScript with strict compiler settings on the current Node.js LTS release.</li>
+<li>Workspace: pnpm workspaces and Turborepo.</li>
+<li>HTTP services: Fastify with Zod schemas.</li>
+<li>Telemetry: OpenTelemetry SDKs and Collector, with Jaeger locally.</li>
+<li>Production-style observability: Grafana Tempo, Loki, Prometheus, and Grafana behind provider interfaces.</li>
+<li>Workflow orchestration: Temporal for durable, retryable incident workflows.</li>
+<li>State and artifacts: PostgreSQL plus object storage for large trace, log, test, and patch artifacts.</li>
+<li>Code intelligence: Tree-sitter, ripgrep, TypeScript Language Service, Git history, and test discovery.</li>
+<li>Tool interface: MCP TypeScript SDK behind an internal policy layer.</li>
+<li>Testing: Vitest, integration tests, contract tests, Testcontainers, and fault-injection fixtures.</li>
+<li>Isolation: Docker for the MVP; gVisor or ephemeral Kubernetes jobs later.</li>
+<li>Source control: GitHub App with Octokit and GitHub Checks.</li>
+<li>Infrastructure: Docker Compose locally and Kubernetes with Helm or Kustomize as the production exercise.</li>
+</ul>
+<h2>4. Telemetry and incident detection</h2>
+<p>Do not create an agent run for every error span. A single outage can emit thousands of nearly identical failures. Group and enrich related telemetry before starting an expensive diagnosis.</p>
+<h3>Required telemetry metadata</h3>
+<ul>
+<li><code>service.name</code></li>
+<li><code>service.version</code> containing the Git commit SHA</li>
+<li>Deployment environment</li>
+<li>Container image digest or deployment identifier</li>
+<li>HTTP route, RPC method, or messaging operation</li>
+<li>Trace ID and span ID</li>
+<li>Exception type, message, and stack trace</li>
+<li>Request correlation identifiers</li>
+<li>Source maps for compiled TypeScript</li>
+</ul>
+<h3>Incident detector pipeline</h3>
+<ul>
+<li>Validate and normalize incoming telemetry.</li>
+<li>Retrieve the full distributed trace.</li>
+<li>Sanitize secrets, personal data, authorization headers, cookies, and payload fields.</li>
+<li>Generate an incident fingerprint.</li>
+<li>Deduplicate occurrences inside a configurable time window.</li>
+<li>Calculate severity, novelty, error rate, affected services, and deployment correlation.</li>
+<li>Start a repair workflow only when repository and environment policies permit it.</li>
+</ul>
+<h3>Suggested fingerprint</h3>
+<pre><code>
+service.name + environment + exception.type
++ normalized exception.message
++ top application stack frame + route or operation
+</code></pre>
+<p>Normalize UUIDs, timestamps, order identifiers, memory addresses, and other changing values before hashing. Store both the normalized fields and hash so the behavior remains explainable.</p>
+<h3>Trigger sources</h3>
+<ul>
+<li>New exception fingerprint</li>
+<li>Sudden error-rate increase</li>
+<li>SLO burn-rate alert</li>
+<li>Repeated crash loop</li>
+<li>Failure beginning immediately after a deployment</li>
+<li>Cross-service contract or schema error</li>
+</ul>
+<h2>5. Incident contract and persistent state</h2>
+<p>Every repair run must be reproducible. Store an immutable incident bundle containing:</p>
+<ul>
+<li>Incident ID, fingerprint, first seen, last seen, and occurrence count</li>
+<li>Service, environment, region, deployed Git SHA, and image digest</li>
+<li>Trace identifiers and selected spans</li>
+<li>Sanitized exception attributes and related logs</li>
+<li>Metric snapshots and deployment events</li>
+<li>Repository and ownership metadata</li>
+<li>Agent, model, prompt, policy, and tool-schema versions</li>
+<li>Every tool request, result, timeout, retry, and failure</li>
+<li>Generated patches, test artifacts, risk assessment, and final outcome</li>
+</ul>
+<h3>Valid final outcomes</h3>
+<ul>
+<li>Code patch proposed</li>
+<li>Configuration problem detected</li>
+<li>Dependency or infrastructure problem detected</li>
+<li>Rollback recommended</li>
+<li>Insufficient evidence</li>
+<li>Reproduction failed</li>
+<li>Patch failed verification</li>
+<li>Draft pull request created</li>
+</ul>
+<p>Abstention is required. A system that always produces a patch will eventually create persuasive but incorrect changes.</p>
+<h2>6. Repository context engine</h2>
+<p>Tree-sitter supplies the structural index. Lexical search, language-service information, Git history, and test relationships complete the retrieval system.</p>
+<h3>Index generated for each commit</h3>
+<ul>
+<li>Files and detected languages</li>
+<li>Classes, interfaces, functions, methods, parameters, and return types</li>
+<li>Imports, exports, and symbol locations</li>
+<li>Call relationships where reliable</li>
+<li>Associated test files and fixtures</li>
+<li>Configuration, manifests, ownership, and build metadata</li>
+</ul>
+<h3>Retrieval order</h3>
+<ul>
+<li>Exact file and line from the stack trace</li>
+<li>Enclosing function, method, or class</li>
+<li>Callers, callees, imports, and exported symbols</li>
+<li>Other services present in the failed trace</li>
+<li>Tests associated with the suspected symbol</li>
+<li>Recent commits affecting the same code</li>
+<li>Keyword and semantic search as fallback</li>
+</ul>
+<p>Cache repository maps by Git SHA. Never analyze the default branch when the running service was built from a different commit. Add embeddings only after evaluation shows a measurable retrieval gap.</p>
+<h2>7. Agent harness and workflow</h2>
+<p>The harness owns state, model turns, tool execution, budgets, policy checks, persistence, retries, and termination. Use a typed state machine instead of an open-ended conversational loop.</p>
+<pre><code>
+INGEST → TRIAGE → LOCALIZE → FORM_HYPOTHESIS
+→ REPRODUCE → PLAN_PATCH → APPLY_PATCH
+→ VERIFY → RISK_REVIEW → CREATE_DRAFT_PR
+</code></pre>
+<p>Any state may exit as <code>ABSTAINED</code>, <code>FAILED</code>, <code>NEEDS_HUMAN</code>, or <code>COMPLETED</code>.</p>
+<h3>Execution budgets</h3>
+<ul>
+<li>Maximum model turns and token usage</li>
+<li>Maximum tool calls and repeated identical actions</li>
+<li>Wall-clock and test timeouts</li>
+<li>Maximum patch size and files modified</li>
+<li>Cost per incident</li>
+<li>Maximum context and tool-output size</li>
+</ul>
+<p>Use native structured tool calls. Keep concise hypotheses, evidence, and decisions in state, and store tool activity independently. Do not depend on literal Thought, Action, and Observation text.</p>
+<h3>Minimal repair state</h3>
+<pre><code>
+RepairState
+  incident: IncidentBundle
+  repository: RepositorySnapshot
+  evidence: Evidence[]
+  hypotheses: Hypothesis[]
+  currentPlan?: RepairPlan
+  patch?: PatchArtifact
+  validation: ValidationResult[]
+  risk: RiskAssessment
+  budgets: ExecutionBudgets
+</code></pre>
+<h2>8. Tools and MCP boundary</h2>
+<p>Expose small typed capabilities instead of a general-purpose shell. The policy engine stays outside the model and decides which tool can run for each repository, environment, and incident.</p>
+<h3>Read-only telemetry tools</h3>
+<ul>
+<li><code>getIncident</code></li>
+<li><code>getTrace</code></li>
+<li><code>searchRelatedLogs</code></li>
+<li><code>getServiceDependencies</code></li>
+<li><code>getDeploymentMetadata</code></li>
+</ul>
+<h3>Read-only repository tools</h3>
+<ul>
+<li><code>readFileRange</code></li>
+<li><code>searchCode</code></li>
+<li><code>getSymbol</code></li>
+<li><code>getRelatedSymbols</code></li>
+<li><code>findTests</code></li>
+<li><code>getGitHistory</code></li>
+<li><code>getChangedFilesSinceDeployment</code></li>
+</ul>
+<h3>Sandbox mutation tools</h3>
+<ul>
+<li><code>createWorkspace</code></li>
+<li><code>applyPatch</code></li>
+<li><code>writeRegressionTest</code></li>
+<li><code>formatChangedFiles</code></li>
+<li><code>runAllowedTask</code></li>
+<li><code>getDiff</code></li>
+</ul>
+<h3>GitHub tools</h3>
+<ul>
+<li><code>createBranch</code></li>
+<li><code>commitPatch</code></li>
+<li><code>openDraftPullRequest</code></li>
+<li><code>publishCheckRun</code></li>
+</ul>
+<h3>Tool contract requirements</h3>
+<ul>
+<li>Strict JSON Schema</li>
+<li>Canonical path normalization and repository-root containment</li>
+<li>Time, memory, output, and concurrency limits</li>
+<li>Permission classification and policy evaluation</li>
+<li>Structured errors and retry classification</li>
+<li>Audit events and idempotency keys</li>
+</ul>
+<p>Create an allowlisted command catalog for install, build, typecheck, lint, focused tests, service tests, and integration tests.</p>
+<h2>9. Model strategy</h2>
+<p>Keep providers behind a common interface and benchmark them on the incident suite. Route by task instead of using the most expensive model everywhere.</p>
+<ul>
+<li>Deterministic TypeScript for parsing, deduplication, policy, and simple classification</li>
+<li>A fast inexpensive model for summaries and routing</li>
+<li>A cost-balanced reasoning model for fault localization</li>
+<li>A strong coding model for difficult diagnosis and patch generation</li>
+<li>A fresh verifier that sees the incident, patch, and test evidence without inheriting the patching model&#39;s assumptions</li>
+<li>An optional local open-weight model for sensitive classification or redaction</li>
+</ul>
+<p>Current benchmark candidates include GPT-5.6 Luna, Terra, and Sol; Claude Sonnet 5 and Opus 5; and Gemini 3.8 Flash. Do not make the architecture depend on one model.</p>
+<p>Do not fine-tune initially. Build the evaluation set first and separate failures caused by retrieval, tools, orchestration, prompts, model capability, or missing tests. Version every prompt and model configuration.</p>
+<h2>10. Repair sandbox and security</h2>
+<p>Repository content, logs, dependencies, generated patches, and proposed commands are untrusted inputs.</p>
+<h3>Per-incident sandbox procedure</h3>
+<ul>
+<li>Resolve the exact deployed commit.</li>
+<li>Create a disposable writable workspace.</li>
+<li>Run as a non-root user with production credentials removed.</li>
+<li>Mount only the repository and controlled dependency caches.</li>
+<li>Deny network access by default.</li>
+<li>Apply CPU, memory, process, disk, and wall-clock limits.</li>
+<li>Collect the diff, test output, build artifacts, and audit events.</li>
+<li>Destroy the workspace after completion.</li>
+</ul>
+<h3>Security controls</h3>
+<ul>
+<li>Treat source comments, logs, issue text, and test output as prompt-injection material.</li>
+<li>Enforce permissions in executable code outside the model.</li>
+<li>Redact secrets and personal data before remote model requests.</li>
+<li>Use short-lived repository-scoped GitHub App installation tokens.</li>
+<li>Keep branch protection and required checks enabled.</li>
+<li>Never mount deployment credentials into a patch-generation sandbox.</li>
+</ul>
+<h2>11. Verification ladder</h2>
+<ul>
+<li>Reproduce the original failure.</li>
+<li>Show that a focused regression test fails before the patch.</li>
+<li>Show that the same test passes after the patch.</li>
+<li>Run existing related tests.</li>
+<li>Run type checking, linting, and formatting.</li>
+<li>Run the complete affected-service suite.</li>
+<li>Run integration or contract tests.</li>
+<li>Build the changed service.</li>
+<li>Confirm only policy-approved files changed.</li>
+<li>Calculate patch risk and run an independent review.</li>
+</ul>
+<p>A test run only after the patch does not prove that it detects the original defect. Store before-and-after results whenever reproduction is possible.</p>
+<h2>12. GitHub integration and autonomy</h2>
+<p>Use a GitHub App with minimum repository permissions. Create a dedicated incident branch, commit only the verified diff, publish a check run, and open a draft pull request.</p>
+<h3>Autonomy ladder</h3>
+<ul>
+<li>L0: produce an incident diagnosis.</li>
+<li>L1: generate and verify a local patch.</li>
+<li>L2: open a draft pull request with evidence.</li>
+<li>L3: open a ready-for-review pull request for narrowly approved low-risk changes.</li>
+<li>L4: automatically merge narrowly approved changes.</li>
+<li>L5: deploy, observe, and roll back automatically.</li>
+</ul>
+<p>The portfolio target is L2. It already demonstrates observability, agent orchestration, code intelligence, safe execution, verification, and source-control integration.</p>
+<h3>Pull-request evidence</h3>
+<ul>
+<li>Incident fingerprint and trace link</li>
+<li>Detected production version</li>
+<li>Root-cause hypothesis and evidence</li>
+<li>Reproduction command and before/after result</li>
+<li>Patch explanation and affected files</li>
+<li>Tests, checks, and build results</li>
+<li>Risk assessment and known limitations</li>
+<li>Agent, model, prompt, and policy versions</li>
+<li>Complete audit-record link</li>
+</ul>
+<h2>13. Evaluation harness</h2>
+<p>Build an incident-specific benchmark before optimizing models. Each fixture contains a repository commit, service definitions, failure trigger, sanitized telemetry bundle, expected faulty files, hidden verification tests, optional reference patch, and fault category.</p>
+<h3>Required fault families</h3>
+<ul>
+<li>Null or undefined input</li>
+<li>Cross-service schema drift</li>
+<li>Incorrect validation</li>
+<li>Retry or timeout mistake</li>
+<li>Race condition</li>
+<li>Resource leak</li>
+<li>Bad feature flag or environment configuration</li>
+<li>Dependency outage</li>
+<li>Database constraint failure</li>
+<li>Authentication or authorization regression</li>
+<li>Regression introduced by a recent commit</li>
+</ul>
+<h3>Evaluation metrics</h3>
+<ul>
+<li>Incident classification accuracy</li>
+<li>Top-1 and top-3 faulty-file localization</li>
+<li>Failure reproduction success</li>
+<li>Patch application success</li>
+<li>Correct patch rate against hidden tests</li>
+<li>Regression and false-positive rates</li>
+<li>Abstention precision</li>
+<li>Median time to diagnosis and verified patch</li>
+<li>Model cost, tokens, and tool calls per successful repair</li>
+<li>Unrelated files changed</li>
+<li>Draft-PR acceptance and merge rate</li>
+</ul>
+<p>Use SWE-bench for general repair behavior, but retain telemetry-driven fixtures because generic coding benchmarks do not evaluate trace correlation, grouping, deployed-version resolution, or PR governance.</p>
+<h2>14. Operational metrics</h2>
+<ul>
+<li>Mean time to detect</li>
+<li>Time to a useful diagnosis</li>
+<li>Time to a verified patch</li>
+<li>End-to-end mean time to recovery</li>
+<li>Code versus non-code classification accuracy</li>
+<li>Reproduction, verification, and draft-PR success rates</li>
+<li>Human acceptance, edit, rejection, and merge rates</li>
+<li>Escaped-regression and reopened-incident rates</li>
+<li>Agent cost and resource usage per incident</li>
+</ul>
+<p>Measure diagnosis, patch proposal, merge, deployment, and recovery separately.</p>
+<h2>15. Suggested repository structure</h2>
+<pre><code>
+self-healing-sre/
+├─ apps/
+│  ├─ order-service/
+│  ├─ payment-service/
+│  ├─ incident-api/
+│  ├─ repair-worker/
+│  └─ dashboard/
+├─ packages/
+│  ├─ contracts/
+│  ├─ telemetry/
+│  ├─ incident-engine/
+│  ├─ repo-indexer/
+│  ├─ context-engine/
+│  ├─ agent-core/
+│  ├─ model-gateway/
+│  ├─ mcp-tools/
+│  ├─ sandbox-runner/
+│  ├─ policy-engine/
+│  ├─ github-integration/
+│  └─ observability/
+├─ evals/{fixtures,fault-injection,hidden-tests,reports}/
+├─ infra/{docker-compose,otel-collector,temporal,grafana,kubernetes}/
+├─ docs/{architecture,adr,threat-model,runbooks,demos}/
+└─ .github/workflows/
+</code></pre>
+<h2>16. Sixteen-week implementation roadmap</h2>
+<h3>Weeks 1–2: instrumented playground</h3>
+<ul>
+<li>Build OrderService and PaymentService.</li>
+<li>Inject deterministic null, schema, and timeout failures.</li>
+<li>Send traces through the Collector and view failures in Jaeger.</li>
+</ul>
+<p>Exit gate: one repeatable request produces a correctly connected failed trace.</p>
+<h3>Weeks 3–4: source correlation</h3>
+<ul>
+<li>Add service version, environment, image digest, exception attributes, and TypeScript source maps.</li>
+<li>Resolve stack frames to the deployed Git revision.</li>
+</ul>
+<p>Exit gate: a trace resolves to the correct repository, commit, source file, and line.</p>
+<h3>Week 5: incident detector</h3>
+<ul>
+<li>Implement validation, redaction, fingerprinting, deduplication, severity, and deployment correlation.</li>
+</ul>
+<p>Exit gate: repeated errors create one incident with an occurrence count.</p>
+<h3>Weeks 6–7: repository context</h3>
+<ul>
+<li>Create the Tree-sitter symbol map and ranked retrieval.</li>
+<li>Connect symbols to tests and recent Git history.</li>
+</ul>
+<p>Exit gate: the faulty symbol appears in the top three retrieved candidates.</p>
+<h3>Week 8: read-only agent</h3>
+<ul>
+<li>Implement the state machine, model gateway, budgets, and evidence store.</li>
+<li>Support code, non-code, and insufficient-evidence outcomes.</li>
+</ul>
+<p>Exit gate: the agent produces an auditable diagnosis without modifying a repository.</p>
+<h3>Weeks 9–10: reproduction and patching</h3>
+<ul>
+<li>Build disposable workspaces and the allowlisted test runner.</li>
+<li>Require focused reproduction, a minimal patch, and before/after validation.</li>
+</ul>
+<p>Exit gate: known incidents produce minimal patches that pass hidden tests.</p>
+<h3>Week 11: MCP and policy</h3>
+<ul>
+<li>Expose typed tools through MCP and enforce path, command, time, output, and permission boundaries.</li>
+</ul>
+<p>Exit gate: all file and command actions are validated and audited.</p>
+<h3>Week 12: GitHub integration</h3>
+<ul>
+<li>Create the GitHub App, incident branches, commits, checks, and draft pull requests.</li>
+</ul>
+<p>Exit gate: a passing repair opens a draft PR with complete evidence.</p>
+<h3>Weeks 13–14: evaluation and model comparison</h3>
+<ul>
+<li>Build 30–50 varied fixtures.</li>
+<li>Compare context strategies, prompts, models, latency, cost, and abstention.</li>
+</ul>
+<p>Exit gate: evaluation runs are reproducible and results are published.</p>
+<h3>Week 15: security and recovery</h3>
+<ul>
+<li>Test redaction, prompt injection, path traversal, network denial, resource limits, retries, and worker crashes.</li>
+</ul>
+<p>Exit gate: security and recovery tests pass.</p>
+<h3>Week 16: product demonstration</h3>
+<ul>
+<li>Complete the dashboard, ADRs, threat model, runbooks, demo script, and recorded walkthrough.</li>
+</ul>
+<p>Exit gate: a fresh environment reproduces the complete incident-to-draft-PR story.</p>
+<h2>17. First end-to-end release scope</h2>
+<ul>
+<li>Two TypeScript services in one repository</li>
+<li>One local environment with OpenTelemetry Collector and Jaeger</li>
+<li>Three injected fault classes</li>
+<li>Exact Git SHA and source-map correlation</li>
+<li>Tree-sitter plus lexical search</li>
+<li>One coding model behind a provider-neutral interface</li>
+<li>Docker repair sandbox</li>
+<li>Regression-test generation and validation</li>
+<li>Draft pull-request creation</li>
+<li>Twenty evaluation fixtures</li>
+<li>No automatic merge or deployment</li>
+</ul>
+<h2>18. Portfolio demonstration</h2>
+<p>The strongest demonstration is a single command that launches the platform, injects traffic, displays the failed distributed trace, creates one deduplicated incident, resolves the deployed source revision, retrieves the relevant symbols and tests, reproduces the failure, adds a regression test, generates a minimal patch, verifies it, and opens a draft pull request with the complete evidence trail.</p>
+<p>The README and demo should report localization accuracy, correct-patch rate, abstention behavior, median diagnosis time, verified-patch time, model cost, and known limitations.</p>
+<h2>Authoritative references</h2>
+<ul>
+<li><a href="https://opentelemetry.io/docs/collector/">OpenTelemetry Collector</a> — Collector architecture and components.</li>
+<li><a href="https://opentelemetry.io/docs/specs/otel/trace/exceptions/">OpenTelemetry exception conventions</a> — Recording exceptions and stack-trace attributes.</li>
+<li><a href="https://tree-sitter.github.io/tree-sitter/using-parsers/index.html">Tree-sitter parser guide</a> — Parsing source code into syntax trees.</li>
+<li><a href="https://tree-sitter.github.io/tree-sitter/using-parsers/queries/1-syntax.html">Tree-sitter query syntax</a> — Extracting language-specific nodes and symbols.</li>
+<li><a href="https://docs.temporal.io/">Temporal documentation</a> — Durable workflows, retries, task queues, and recovery.</li>
+<li><a href="https://blog.modelcontextprotocol.io/posts/2026-07-28/">Model Context Protocol specification update</a> — Current protocol architecture and authorization direction.</li>
+<li><a href="https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app">GitHub App permissions</a> — Least-privilege permissions for GitHub Apps.</li>
+<li><a href="https://docs.github.com/en/rest/guides/using-the-rest-api-to-interact-with-checks">GitHub Checks API</a> — Publishing checks and annotations on pull requests.</li>
+<li><a href="https://gvisor.dev/docs/">gVisor documentation</a> — Stronger isolation for untrusted workloads.</li>
+<li><a href="https://kubernetes.io/docs/concepts/services-networking/network-policies/">Kubernetes NetworkPolicy</a> — Pod ingress and egress isolation.</li>
+<li><a href="https://github.com/SWE-bench/SWE-bench/blob/main/docs/guides/evaluation.md">SWE-bench evaluation guide</a> — Containerized patch evaluation.</li>
+<li><a href="https://platform.openai.com/docs/models">OpenAI model catalog</a> — Current OpenAI model options.</li>
+<li><a href="https://docs.anthropic.com/en/docs/about-claude/model-deprecations">Anthropic model status</a> — Current Claude model availability.</li>
+<li><a href="https://ai.google.dev/gemini-api/docs/models">Gemini model catalog</a> — Current Gemini model options.</li>
+</ul>
+
+</body>
+</html>
