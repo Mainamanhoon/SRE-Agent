@@ -11,9 +11,25 @@ type IncidentRecorder interface {
 	Record(context.Context, domain.IncidentInput) (domain.Incident, error)
 }
 
-// IncidentRepository is the persistence contract implemented by storage adapters.
-type IncidentRepository interface {
+// IncidentReader is separate from writes so read-only consumers depend on the narrow capability.
+type IncidentReader interface {
+	Get(context.Context, string) (domain.Incident, error)
+}
+
+// IncidentWriter is the persistence capability needed by incident recording.
+type IncidentWriter interface {
 	Upsert(context.Context, domain.IncidentInput) (domain.Incident, error)
+}
+
+// IncidentFinder is the persistence capability needed by incident reads.
+type IncidentFinder interface {
+	FindByID(context.Context, string) (domain.Incident, error)
+}
+
+// IncidentRepository combines the capabilities required by IncidentServiceV1.
+type IncidentRepository interface {
+	IncidentWriter
+	IncidentFinder
 }
 
 // ReadinessProbe is deliberately separate from persistence operations.

@@ -25,7 +25,11 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@deepseek-ai/dsh-subprocess-local",
+      "@google/genai",
       "esbuild",
+      "koffi",
+      "node-pty",
       "protobufjs"
     ]
   }

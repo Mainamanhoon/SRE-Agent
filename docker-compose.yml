@@ -4,6 +4,28 @@ services:
     ports:
       - "16686:16686"
 
+  loki:
+    image: grafana/loki:3.7.8
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./Backend/services/otel-collector/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - sre_agent_loki:/loki
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-remote-write-receiver
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./Backend/services/otel-collector/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - sre_agent_prometheus:/prometheus
+
   otel-collector:
     build:
       context: ./Backend/services/otel-collector
@@ -13,6 +35,8 @@ services:
       - "13133:13133"
     depends_on:
       - jaeger
+      - loki
+      - prometheus
 
   postgres:
     image: postgres:17-alpine
@@ -108,6 +132,55 @@ services:
       temporal:
         condition: service_healthy
 
+  agent-runner:
+    profiles: ["agent"]
+    build:
+      context: .
+      dockerfile: Backend/services/agent-runner/Dockerfile
+    environment:
+      NODE_ENV: development
+      PORT: 4040
+      SERVICE_NAME: agent-runner
+      SERVICE_VERSION: local
+      CONTROL_API_URL: http://control-api:4000
+      INCIDENT_SERVICE_URL: http://incident-service:4020
+      TRACE_QUERY_URL: http://jaeger:16686
+      LOKI_QUERY_URL: ${LOKI_QUERY_URL:-http://loki:3100}
+      PROMETHEUS_QUERY_URL: ${PROMETHEUS_QUERY_URL:-http://prometheus:9090}
+      KUBERNETES_DEFAULT_NAMESPACE: ${KUBERNETES_DEFAULT_NAMESPACE:-default}
+      KUBERNETES_ALLOWED_NAMESPACES: ${KUBERNETES_ALLOWED_NAMESPACES:-default}
+      KUBERNETES_SERVICE_LABEL: ${KUBERNETES_SERVICE_LABEL:-app.kubernetes.io/name}
+      AGENT_HARNESS: ${AGENT_HARNESS:-deepseek}
+      AGENT_MCP_SERVER_ENTRYPOINT: /app/dist/mcp-server.js
+      AGENT_WORKSPACE_PATH: /workspace
+      DEEPSEEK_HOME: /var/lib/agent-runner/dsh
+      DEEPSEEK_PROFILE: sdk
+      DEEPSEEK_PATCH_PATHS: ${DEEPSEEK_PATCH_PATHS:-/app/config/gemini.cordis.patch.yml,/app/config/project-tools.cordis.patch.yml}
+      DEEPSEEK_PROVIDER: ${DEEPSEEK_PROVIDER:-google}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-gemini-3.8-flash}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MAX_TOOL_CALLS_PER_RUN: ${MAX_TOOL_CALLS_PER_RUN:-30}
+      MCP_TOOL_MAX_RESULT_BYTES: ${MCP_TOOL_MAX_RESULT_BYTES:-2000000}
+      GIT_EXECUTABLE: git
+    ports:
+      - "4040:4040"
+    volumes:
+      - ${AGENT_WORKSPACE_HOST_PATH:-./tmp/agent-workspace}:/workspace:ro
+      - agent_runner_data:/var/lib/agent-runner
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      - control-api
+      - incident-service
+      - jaeger
+      - loki
+      - prometheus
+
   sandbox-controller:
     profiles: ["kubernetes"]
     build:
@@ -124,3 +197,6 @@ services:
 
 volumes:
   sre_agent_postgres:
+  agent_runner_data:
+  sre_agent_loki:
+  sre_agent_prometheus:

@@ -50,10 +50,11 @@ When behavior changes incompatibly, add an `ImplementationV2` beside `Implementa
 | --- | --- | --- |
 | Control API | abstract `Clock`, abstract `ControlApiQueryService` | `SystemClock`, `ControlApiQueryServiceV1` |
 | Incident detector | `FingerprintGenerator`, `Clock`, `CandidateDetector` | `SHA256V1`, `SystemClock`, `DetectorV1` |
-| Incident service | `IncidentRepository`, `IncidentRecorder`, `ReadinessProbe` | `IncidentRepositoryV1`, `IncidentServiceV1` |
+| Incident service | `IncidentWriter`, `IncidentFinder`, `IncidentRepository`, `IncidentRecorder`, `IncidentReader`, `ReadinessProbe` | `IncidentRepositoryV1`, `IncidentServiceV1` |
 | Repair worker | abstract `IncidentTriagePolicy`, abstract `RepairActivities` | `RequiredEvidenceTriagePolicyV1`, `RepairActivitiesV1` |
+| Agent runner | abstract `RepairAgentHarness`, `RepairAgentHarnessRegistry`, `IncidentDiagnosisService`, `DiagnosisPromptBuilder`, `RepairTool`, `RepairToolCatalog`, `RepairToolExecutor`, `RepairToolAuthorizationPolicy`, `RepairToolCallBudget`, `RepairToolAuditSink`, `RepairToolClock`, `RepairToolServer`, evidence/workspace/process ports | `DeepSeekRepairAgentHarnessV1`, `FakeRepairAgentHarnessV1`, `RepairAgentHarnessRegistryV1`, `IncidentDiagnosisServiceV1`, `DiagnosisPromptBuilderV1`, `RepairToolCatalogV1`, `RepairToolExecutorV1`, `AllowlistedRepairToolAuthorizationPolicyV1`, `InMemoryRepairToolCallBudgetV1`, `McpStdioRepairToolServerV1`, JSON-lines audit/system-clock/HTTP/Node/git/ripgrep adapters |
 | Sandbox controller | `SandboxProvisioner`, `ToolchainImageResolver`, `SandboxCreator`, `ReadinessProbe` | `JobProvisionerV1`, `ToolchainImageResolverV1`, `SandboxServiceV1` |
-| OTel Collector | receiver, processor, exporter components | OTLP receiver, memory limiter, batch processor, Jaeger OTLP exporter |
+| OTel Collector | receiver, processor, exporter components | OTLP receiver, memory limiter, batch processor, Jaeger trace, Loki log, and Prometheus metric export |
 
 The OpenTelemetry Collector is an upstream component configured through its native receiver/processor/exporter interfaces. Wrapping it in project-specific classes would introduce coupling without providing a useful substitution boundary.
 

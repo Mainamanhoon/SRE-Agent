@@ -10,6 +10,8 @@ This directory is the source of truth for the Autonomous Self-Healing SRE Agent 
 4. [Development Guide](DEVELOPMENT_GUIDE.md) — local setup, commands, conventions, and pull-request expectations.
 5. [Security and Evaluation](SECURITY_AND_EVALUATION.md) — sandbox policy, threat model, benchmark design, and release gates.
 
+6. [Functionality Catalog](FUNCTIONALITY_CATALOG.md) - living implemented/planned capability inventory and implementation journal.
+
 ## Exported roadmap copies
 
 - `Autonomous-Self-Healing-Code-Agent-Roadmap.docx`

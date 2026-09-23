@@ -13,7 +13,7 @@ import (
 
 const maxIncidentBodyBytes = 1 << 20
 
-func NewHandler(recorder application.IncidentRecorder, readiness application.ReadinessProbe, serviceVersion string) http.Handler {
+func NewHandler(recorder application.IncidentRecorder, reader application.IncidentReader, readiness application.ReadinessProbe, serviceVersion string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(writer http.ResponseWriter, _ *http.Request) {
 		writeJSON(writer, http.StatusOK, map[string]string{
@@ -34,7 +34,27 @@ func NewHandler(recorder application.IncidentRecorder, readiness application.Rea
 	mux.HandleFunc("POST /api/v1/incidents", func(writer http.ResponseWriter, request *http.Request) {
 		handleRecord(recorder, writer, request)
 	})
+	mux.HandleFunc("GET /api/v1/incidents/{incidentID}", func(writer http.ResponseWriter, request *http.Request) {
+		handleGet(reader, writer, request)
+	})
 	return mux
+}
+
+func handleGet(reader application.IncidentReader, writer http.ResponseWriter, request *http.Request) {
+	incident, err := reader.Get(request.Context(), request.PathValue("incidentID"))
+	if errors.Is(err, application.ErrInvalidIncidentID) {
+		writeJSON(writer, http.StatusUnprocessableEntity, map[string]string{"error": "incident id is required"})
+		return
+	}
+	if errors.Is(err, application.ErrIncidentNotFound) {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "incident not found"})
+		return
+	}
+	if err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "incident lookup failed"})
+		return
+	}
+	writeJSON(writer, http.StatusOK, incident)
 }
 
 func handleRecord(recorder application.IncidentRecorder, writer http.ResponseWriter, request *http.Request) {

@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sre-agent/incident-service/internal/application"
 	"github.com/sre-agent/incident-service/internal/domain"
@@ -37,7 +39,8 @@ ON CONFLICT (fingerprint) DO UPDATE SET
   last_seen_at = NOW(),
   updated_at = NOW()
 RETURNING id::text, fingerprint, service_name, environment, severity, status,
-          occurrence_count, first_seen_at, last_seen_at`
+          COALESCE(trace_id, ''), COALESCE(error_summary, ''), occurrence_count,
+          first_seen_at, last_seen_at`
 
 	var incident domain.Incident
 	err := store.pool.QueryRow(ctx, query,
@@ -54,9 +57,39 @@ RETURNING id::text, fingerprint, service_name, environment, severity, status,
 		&incident.Environment,
 		&incident.Severity,
 		&incident.Status,
+		&incident.TraceID,
+		&incident.ErrorSummary,
 		&incident.OccurrenceCount,
 		&incident.FirstSeenAt,
 		&incident.LastSeenAt,
 	)
+	return incident, err
+}
+
+func (store *IncidentRepositoryV1) FindByID(ctx context.Context, incidentID string) (domain.Incident, error) {
+	const query = `
+SELECT id::text, fingerprint, service_name, environment, severity, status,
+       COALESCE(trace_id, ''), COALESCE(error_summary, ''), occurrence_count,
+       first_seen_at, last_seen_at
+FROM incidents
+WHERE id = $1`
+
+	var incident domain.Incident
+	err := store.pool.QueryRow(ctx, query, incidentID).Scan(
+		&incident.ID,
+		&incident.Fingerprint,
+		&incident.Service,
+		&incident.Environment,
+		&incident.Severity,
+		&incident.Status,
+		&incident.TraceID,
+		&incident.ErrorSummary,
+		&incident.OccurrenceCount,
+		&incident.FirstSeenAt,
+		&incident.LastSeenAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Incident{}, application.ErrIncidentNotFound
+	}
 	return incident, err
 }

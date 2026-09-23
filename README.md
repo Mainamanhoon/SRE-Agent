@@ -10,7 +10,7 @@ An evidence-driven incident response platform that correlates OpenTelemetry data
 
 ## Requirements
 
-- Node.js 22 or newer
+- Node.js 22.19 or newer (Node.js 24 is used for the agent-runner container)
 - pnpm 10 or newer
 - Docker Desktop for the observability stack
 

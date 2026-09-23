@@ -30,7 +30,7 @@ func main() {
 	incidentService := application.NewIncidentServiceV1(repository)
 	server := &http.Server{
 		Addr:              address,
-		Handler:           api.NewHandler(incidentService, repository, envOrDefault("SERVICE_VERSION", "local")),
+		Handler:           api.NewHandler(incidentService, incidentService, repository, envOrDefault("SERVICE_VERSION", "local")),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

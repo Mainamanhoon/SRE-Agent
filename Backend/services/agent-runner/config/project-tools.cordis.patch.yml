@@ -1,0 +1,34 @@
+- id: sre-agent-project-tools
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: sre_agent
+    transport: stdio
+    command: !!js process.execPath
+    args:
+      - !!js process.env.AGENT_MCP_SERVER_ENTRYPOINT
+    env:
+      AGENT_WORKSPACE_PATH: !!js process.env.AGENT_WORKSPACE_PATH
+      CONTROL_API_URL: !!js process.env.CONTROL_API_URL
+      GIT_EXECUTABLE: !!js process.env.GIT_EXECUTABLE
+      INCIDENT_SERVICE_URL: !!js process.env.INCIDENT_SERVICE_URL
+      KUBECONFIG: !!js process.env.KUBECONFIG
+      KUBERNETES_ALLOWED_NAMESPACES: !!js process.env.KUBERNETES_ALLOWED_NAMESPACES
+      KUBERNETES_DEFAULT_NAMESPACE: !!js process.env.KUBERNETES_DEFAULT_NAMESPACE
+      KUBERNETES_SERVICE_HOST: !!js process.env.KUBERNETES_SERVICE_HOST
+      KUBERNETES_SERVICE_LABEL: !!js process.env.KUBERNETES_SERVICE_LABEL
+      KUBERNETES_SERVICE_PORT: !!js process.env.KUBERNETES_SERVICE_PORT
+      LOKI_QUERY_URL: !!js process.env.LOKI_QUERY_URL
+      MAX_TOOL_CALLS_PER_RUN: !!js process.env.MAX_TOOL_CALLS_PER_RUN
+      MCP_TOOL_MAX_RESULT_BYTES: !!js process.env.MCP_TOOL_MAX_RESULT_BYTES
+      READ_ONLY_TOOL_MAX_FILE_BYTES: !!js process.env.READ_ONLY_TOOL_MAX_FILE_BYTES
+      READ_ONLY_TOOL_MAX_RESPONSE_BYTES: !!js process.env.READ_ONLY_TOOL_MAX_RESPONSE_BYTES
+      READ_ONLY_TOOL_TIMEOUT_MS: !!js process.env.READ_ONLY_TOOL_TIMEOUT_MS
+      REPAIR_RUN_ID: !!js process.env.REPAIR_RUN_ID
+      RIPGREP_EXECUTABLE: !!js process.env.RIPGREP_EXECUTABLE
+      PROMETHEUS_QUERY_URL: !!js process.env.PROMETHEUS_QUERY_URL
+      SERVICE_VERSION: !!js process.env.SERVICE_VERSION
+      TRACE_QUERY_URL: !!js process.env.TRACE_QUERY_URL
+    toolCallTimeoutMs: 15000
+    failOnStartupError: true
+    reconnect:
+      enabled: false
