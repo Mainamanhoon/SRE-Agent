@@ -48,13 +48,14 @@ When behavior changes incompatibly, add an `ImplementationV2` beside `Implementa
 
 | Service | Primary ports | Current implementations |
 | --- | --- | --- |
-| Control API | abstract `Clock`, abstract `ControlApiQueryService` | `SystemClock`, `ControlApiQueryServiceV1` |
+| Control API | abstract `Clock`, `ControlApiQueryService`, `ControlPlaneGateway`, `RepairWorkflowGateway` | `SystemClock`, `ControlApiQueryServiceV1`, `FetchControlPlaneGatewayV1`, `TemporalRepairWorkflowGatewayV1` |
 | Incident detector | `FingerprintGenerator`, `Clock`, `CandidateDetector` | `SHA256V1`, `SystemClock`, `DetectorV1` |
-| Incident service | `IncidentWriter`, `IncidentFinder`, `IncidentRepository`, `IncidentRecorder`, `IncidentReader`, `ReadinessProbe` | `IncidentRepositoryV1`, `IncidentServiceV1` |
-| Repair worker | abstract `IncidentTriagePolicy`, abstract `RepairActivities` | `RequiredEvidenceTriagePolicyV1`, `RepairActivitiesV1` |
+| Incident service | `IncidentWriter`, `IncidentFinder`, `IncidentStatusWriter`, `IncidentRepository`, `IncidentRecorder`, `IncidentReader`, `IncidentStatusManager`, `IncidentStatusPolicy`, `ReadinessProbe` | `IncidentRepositoryV1`, `IncidentServiceV1`, `IncidentStatusPolicyV1` |
+| Repair worker | abstract `IncidentTriagePolicy`, `RepairActivities`, `RepairPlanParser`, `RepairServiceGateway` | `RequiredEvidenceTriagePolicyV1`, `RepairActivitiesV1`, `JsonRepairPlanParserV1`, `FetchRepairServiceGatewayV1` |
 | Agent runner | abstract `RepairAgentHarness`, `RepairAgentHarnessRegistry`, `IncidentDiagnosisService`, `DiagnosisPromptBuilder`, `RepairTool`, `RepairToolCatalog`, `RepairToolExecutor`, `RepairToolAuthorizationPolicy`, `RepairToolCallBudget`, `RepairToolAuditSink`, `RepairToolClock`, `RepairToolServer`, evidence/workspace/process ports | `DeepSeekRepairAgentHarnessV1`, `FakeRepairAgentHarnessV1`, `RepairAgentHarnessRegistryV1`, `IncidentDiagnosisServiceV1`, `DiagnosisPromptBuilderV1`, `RepairToolCatalogV1`, `RepairToolExecutorV1`, `AllowlistedRepairToolAuthorizationPolicyV1`, `InMemoryRepairToolCallBudgetV1`, `McpStdioRepairToolServerV1`, JSON-lines audit/system-clock/HTTP/Node/git/ripgrep adapters |
-| Sandbox controller | `SandboxProvisioner`, `ToolchainImageResolver`, `SandboxCreator`, `ReadinessProbe` | `JobProvisionerV1`, `ToolchainImageResolverV1`, `SandboxServiceV1` |
-| OTel Collector | receiver, processor, exporter components | OTLP receiver, memory limiter, batch processor, Jaeger trace, Loki log, and Prometheus metric export |
+| Sandbox controller | `SandboxProvisioner`, `ToolchainImageResolver`, `SandboxCreator`, `SandboxReader`, `SandboxDeleter`, `ReadinessProbe` | `JobProvisionerV1`, `ToolchainImageResolverV1`, `SandboxServiceV1` |
+| GitHub App | `DeliveryCreator`, `SourceArchiveReader`, `GitHubGateway`, `InstallationTokenProvider`, `WebhookVerifier` | `DeliveryServiceV1`, `RESTGatewayV1`, `InstallationTokenProviderV1`, `WebhookVerifierV1` |
+| OTel Collector | receiver, processor, exporter, queue-storage components | OTLP receiver, memory/resource/redaction/batch processors, file storage, and queued Jaeger/Loki/Prometheus export |
 
 The OpenTelemetry Collector is an upstream component configured through its native receiver/processor/exporter interfaces. Wrapping it in project-specific classes would introduce coupling without providing a useful substitution boundary.
 

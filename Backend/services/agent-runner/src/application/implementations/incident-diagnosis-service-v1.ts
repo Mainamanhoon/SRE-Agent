@@ -2,6 +2,7 @@ import type {
   DiagnoseIncidentRequest,
   RepairAgentCapabilities,
   RepairAgentEventObserver,
+  RepairAgentRunOptions,
   RepairAgentRunResult,
 } from "../../domain/repair-agent.js";
 import { IncidentDiagnosisService } from "../contracts/incident-diagnosis-service.js";
@@ -15,8 +16,9 @@ export class IncidentDiagnosisServiceV1 extends IncidentDiagnosisService {
   public override diagnose(
     request: DiagnoseIncidentRequest,
     observer?: RepairAgentEventObserver,
+    options?: RepairAgentRunOptions,
   ): Promise<RepairAgentRunResult> {
-    return this.harness.diagnose(request, observer);
+    return this.harness.diagnose(request, observer, options);
   }
 
   public override getCapabilities(): RepairAgentCapabilities {

@@ -1,0 +1,10 @@
+FROM golang:1.27.1-alpine AS build
+WORKDIR /src
+COPY go.mod ./
+COPY cmd ./cmd
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/sandbox-executor ./cmd/sandbox-executor
+
+FROM golang:1.27.1-alpine
+COPY --from=build /out/sandbox-executor /sandbox-executor
+USER 65532:65532
+ENTRYPOINT ["/sandbox-executor"]

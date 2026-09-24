@@ -41,13 +41,16 @@ export class DeepSeekSdkRuntimeClientFactoryV1 extends DeepSeekRuntimeClientFact
 
   public override create(context: DeepSeekRuntimeLaunchContext): DeepSeekRuntimeClient {
     const childEnvironment = {
-      ...process.env,
+      ...selectHarnessEnvironment(process.env),
+      API_AUTH_ENABLED: String(this.config.API_AUTH_ENABLED),
+      API_AUTH_TOKEN: this.config.API_AUTH_TOKEN,
       AGENT_MCP_SERVER_ENTRYPOINT: this.config.AGENT_MCP_SERVER_ENTRYPOINT,
       AGENT_WORKSPACE_PATH: this.config.AGENT_WORKSPACE_PATH,
       CONTROL_API_URL: this.config.CONTROL_API_URL,
       DSH_PERMISSION_MODE: "read-only",
       GIT_EXECUTABLE: this.config.GIT_EXECUTABLE,
       INCIDENT_SERVICE_URL: this.config.INCIDENT_SERVICE_URL,
+      INTERNAL_SERVICE_TOKEN: this.config.INTERNAL_SERVICE_TOKEN,
       KUBERNETES_ALLOWED_NAMESPACES: this.config.KUBERNETES_ALLOWED_NAMESPACES,
       KUBERNETES_DEFAULT_NAMESPACE: this.config.KUBERNETES_DEFAULT_NAMESPACE,
       KUBERNETES_SERVICE_LABEL: this.config.KUBERNETES_SERVICE_LABEL,
@@ -78,6 +81,46 @@ export class DeepSeekSdkRuntimeClientFactoryV1 extends DeepSeekRuntimeClientFact
     });
     return new DeepSeekSdkRuntimeClientV1(harness);
   }
+}
+
+export function selectHarnessEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const exactKeys = new Set([
+    "ANTHROPIC_API_KEY",
+    "CI",
+    "DEEPSEEK_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "HOME",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "LANG",
+    "LC_ALL",
+    "LOCALAPPDATA",
+    "NODE_EXTRA_CA_CERTS",
+    "NODE_OPTIONS",
+    "NO_PROXY",
+    "OPENAI_API_KEY",
+    "PATH",
+    "PATHEXT",
+    "Path",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "SystemRoot",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "USERPROFILE",
+    "WINDIR",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+  ]);
+  return Object.fromEntries(
+    Object.entries(environment).filter(
+      ([key, value]) =>
+        value !== undefined && (exactKeys.has(key) || key.startsWith("KUBERNETES_SERVICE_")),
+    ),
+  );
 }
 
 function parsePatchPaths(value: string): string[] {

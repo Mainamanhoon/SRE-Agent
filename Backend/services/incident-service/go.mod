@@ -1,6 +1,6 @@
 module github.com/sre-agent/incident-service
 
-go 1.24.0
+go 1.27.1
 
 require github.com/jackc/pgx/v5 v5.7.6
 

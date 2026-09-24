@@ -59,3 +59,7 @@ export interface RepairAgentCapabilities {
 }
 
 export type RepairAgentEventObserver = (event: RepairAgentEvent) => void;
+
+export interface RepairAgentRunOptions {
+  signal?: AbortSignal;
+}

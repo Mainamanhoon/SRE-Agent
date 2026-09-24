@@ -1,0 +1,266 @@
+apiVersion: batch/v1
+kind: Job
+metadata: { name: incident-migrations }
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: registry.example/sre-agent/incident-migrations:REPLACE_ME
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: sre-agent-database, key: url } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: incident-service }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: incident-service } }
+  template:
+    metadata:
+      labels: { app: incident-service }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "4020", prometheus.io/path: /metrics }
+    spec:
+      securityContext: { runAsNonRoot: true }
+      containers:
+        - name: incident-service
+          image: registry.example/sre-agent/incident-service:REPLACE_ME
+          ports: [{ name: http, containerPort: 4020 }]
+          env:
+            - { name: APP_ENV, value: production }
+            - { name: API_AUTH_ENABLED, value: "true" }
+            - { name: DATABASE_MAX_CONNECTIONS, value: "50" }
+            - { name: DATABASE_MIN_CONNECTIONS, value: "5" }
+            - { name: REQUESTS_PER_SECOND, value: "2000" }
+            - { name: REQUEST_BURST, value: "4000" }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: sre-agent-database, key: url } }
+            - name: API_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
+          resources: { requests: { cpu: 250m, memory: 128Mi }, limits: { cpu: "2", memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /ready, port: http }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: http }, periodSeconds: 10 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: incident-service }
+spec: { selector: { app: incident-service }, ports: [{ name: http, port: 4020, targetPort: http }] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: incident-service }
+spec: { minAvailable: 2, selector: { matchLabels: { app: incident-service } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: incident-service }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: incident-service }
+  minReplicas: 3
+  maxReplicas: 30
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: repair-worker }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: repair-worker } }
+  template:
+    metadata: { labels: { app: repair-worker } }
+    spec:
+      securityContext: { runAsNonRoot: true }
+      containers:
+        - name: repair-worker
+          image: registry.example/sre-agent/repair-worker:REPLACE_ME
+          ports: [{ name: health, containerPort: 4060 }]
+          env:
+            - { name: TEMPORAL_ADDRESS, value: temporal:7233 }
+            - { name: TEMPORAL_NAMESPACE, value: default }
+            - { name: TEMPORAL_TASK_QUEUE, value: repair-workflows }
+            - { name: INCIDENT_SERVICE_URL, value: http://incident-service:4020 }
+            - { name: AGENT_RUNNER_URL, value: http://agent-runner:4040 }
+            - { name: SANDBOX_CONTROLLER_URL, value: http://sandbox-controller.sre-agent-sandboxes:4030 }
+            - { name: GITHUB_APP_URL, value: http://github-app:4050 }
+            - { name: SANDBOX_SOURCE_BASE_URL, value: http://github-app.sre-agent:4050 }
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
+          resources: { requests: { cpu: 250m, memory: 256Mi }, limits: { cpu: "2", memory: 1Gi } }
+          readinessProbe: { httpGet: { path: /health/ready, port: health }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health/live, port: health }, periodSeconds: 10 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: repair-worker }
+spec: { minAvailable: 2, selector: { matchLabels: { app: repair-worker } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: repair-worker }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: repair-worker }
+  minReplicas: 3
+  maxReplicas: 30
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: github-app }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: github-app } }
+  template:
+    metadata:
+      labels: { app: github-app }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "4050", prometheus.io/path: /metrics }
+    spec:
+      securityContext: { runAsNonRoot: true }
+      containers:
+        - name: github-app
+          image: registry.example/sre-agent/github-app:REPLACE_ME
+          ports: [{ name: http, containerPort: 4050 }]
+          env:
+            - { name: APP_ENV, value: production }
+            - { name: API_AUTH_ENABLED, value: "true" }
+            - name: API_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
+            - name: GITHUB_APP_ID
+              valueFrom: { secretKeyRef: { name: sre-agent-github-app, key: app-id } }
+            - name: GITHUB_APP_PRIVATE_KEY_BASE64
+              valueFrom: { secretKeyRef: { name: sre-agent-github-app, key: private-key-base64 } }
+            - name: GITHUB_WEBHOOK_SECRET
+              valueFrom: { secretKeyRef: { name: sre-agent-github-app, key: webhook-secret } }
+          resources: { requests: { cpu: 250m, memory: 128Mi }, limits: { cpu: "2", memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /ready, port: http }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: http }, periodSeconds: 10 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: github-app }
+spec: { selector: { app: github-app }, ports: [{ name: http, port: 4050, targetPort: http }] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: github-app }
+spec: { minAvailable: 2, selector: { matchLabels: { app: github-app } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: github-app }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: github-app }
+  minReplicas: 3
+  maxReplicas: 30
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox-controller
+  namespace: sre-agent-sandboxes
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: sandbox-controller } }
+  template:
+    metadata:
+      labels: { app: sandbox-controller }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "4030", prometheus.io/path: /metrics }
+    spec:
+      serviceAccountName: sandbox-controller
+      securityContext: { runAsNonRoot: true }
+      containers:
+        - name: sandbox-controller
+          image: registry.example/sre-agent/sandbox-controller:REPLACE_ME
+          ports: [{ name: http, containerPort: 4030 }]
+          env:
+            - { name: APP_ENV, value: production }
+            - { name: API_AUTH_ENABLED, value: "true" }
+            - { name: SANDBOX_NAMESPACE, value: sre-agent-sandboxes }
+            - { name: SANDBOX_RUNTIME_CLASS, value: gvisor }
+            - { name: SANDBOX_NODE_IMAGE, value: registry.example/sre-agent/sandbox-node:REPLACE_ME }
+            - { name: SANDBOX_GO_IMAGE, value: registry.example/sre-agent/sandbox-go:REPLACE_ME }
+            - name: API_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
+            - name: SOURCE_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: "1", memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /ready, port: http }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: http }, periodSeconds: 10 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: sandbox-controller, namespace: sre-agent-sandboxes }
+spec: { selector: { app: sandbox-controller }, ports: [{ name: http, port: 4030, targetPort: http }] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: sandbox-controller, namespace: sre-agent-sandboxes }
+spec: { minAvailable: 1, selector: { matchLabels: { app: sandbox-controller } } }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: otel-collector }
+spec:
+  serviceName: otel-collector-headless
+  replicas: 2
+  selector: { matchLabels: { app: otel-collector } }
+  template:
+    metadata: { labels: { app: otel-collector } }
+    spec:
+      securityContext: { runAsNonRoot: true, fsGroup: 10001 }
+      containers:
+        - name: otel-collector
+          image: registry.example/sre-agent/otel-collector:REPLACE_ME
+          ports:
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+            - { name: health, containerPort: 13133 }
+          env:
+            - { name: DEPLOYMENT_ENVIRONMENT, value: production }
+            - { name: OTEL_EXPORTER_INSECURE, value: "true" }
+          volumeMounts: [{ name: queue, mountPath: /var/lib/otelcol }]
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: "2", memory: 1Gi } }
+          readinessProbe: { httpGet: { path: /, port: health }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /, port: health }, periodSeconds: 10 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+  volumeClaimTemplates:
+    - metadata: { name: queue }
+      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 10Gi } } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: otel-collector }
+spec:
+  selector: { app: otel-collector }
+  ports:
+    - { name: otlp-grpc, port: 4317, targetPort: otlp-grpc }
+    - { name: otlp-http, port: 4318, targetPort: otlp-http }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: otel-collector-headless }
+spec: { clusterIP: None, selector: { app: otel-collector }, ports: [{ name: otlp-grpc, port: 4317, targetPort: otlp-grpc }] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: otel-collector-ingress }
+spec:
+  podSelector: { matchLabels: { app: otel-collector } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: sre-agent
+      ports:
+        - { protocol: TCP, port: 4317 }
+        - { protocol: TCP, port: 4318 }

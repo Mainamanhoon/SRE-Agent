@@ -13,6 +13,7 @@ const topologySchema = z.object({
 export interface ControlApiServiceTopologyOptions {
   timeoutMs: number;
   maxResponseBytes: number;
+  headers?: Readonly<Record<string, string>>;
 }
 
 export class ControlApiServiceTopologySourceV1 extends ServiceTopologyEvidenceSource {

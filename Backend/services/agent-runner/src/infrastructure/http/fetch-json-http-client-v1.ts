@@ -16,7 +16,7 @@ export class FetchJsonHttpClientV1 extends JsonHttpClient {
     try {
       const response = await fetch(request.url, {
         method: "GET",
-        headers: { accept: "application/json" },
+        headers: { accept: "application/json", ...request.headers },
         signal: controller.signal,
       });
       if (!response.ok) {

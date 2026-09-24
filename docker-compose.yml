@@ -37,6 +37,11 @@ services:
       - jaeger
       - loki
       - prometheus
+    environment:
+      DEPLOYMENT_ENVIRONMENT: development
+      OTEL_EXPORTER_INSECURE: "true"
+    volumes:
+      - sre_agent_otel_queue:/var/lib/otelcol
 
   postgres:
     image: postgres:17-alpine
@@ -88,7 +93,14 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       INCIDENT_DETECTOR_URL: http://incident-detector:4010
       INCIDENT_SERVICE_URL: http://incident-service:4020
+      AGENT_RUNNER_URL: http://agent-runner:4040
+      AGENT_RUNNER_REQUIRED: "false"
       TEMPORAL_ADDRESS: temporal:7233
+      API_AUTH_ENABLED: "false"
+      API_AUTH_TOKEN: ${CONTROL_API_TOKEN:-}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
+      REQUESTS_PER_SECOND: ${CONTROL_API_RPS:-2000}
+      REQUEST_BURST: ${CONTROL_API_BURST:-4000}
     ports:
       - "4000:4000"
     depends_on:
@@ -102,8 +114,17 @@ services:
     environment:
       HTTP_ADDRESS: :4010
       SERVICE_VERSION: local
+      APP_ENV: development
+      INCIDENT_SERVICE_URL: http://incident-service:4020
+      API_AUTH_ENABLED: "true"
+      API_AUTH_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
+      REQUESTS_PER_SECOND: ${INCIDENT_DETECTOR_RPS:-2000}
+      REQUEST_BURST: ${INCIDENT_DETECTOR_BURST:-4000}
     ports:
       - "4010:4010"
+    depends_on:
+      - incident-service
 
   incident-service:
     build:
@@ -111,7 +132,12 @@ services:
     environment:
       HTTP_ADDRESS: :4020
       SERVICE_VERSION: local
+      APP_ENV: development
       DATABASE_URL: postgres://sre_agent:sre_agent_local@postgres:5432/sre_agent?sslmode=disable
+      API_AUTH_ENABLED: "true"
+      API_AUTH_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
+      REQUESTS_PER_SECOND: ${INCIDENT_SERVICE_RPS:-2000}
+      REQUEST_BURST: ${INCIDENT_SERVICE_BURST:-4000}
     ports:
       - "4020:4020"
     depends_on:
@@ -128,6 +154,13 @@ services:
       TEMPORAL_TASK_QUEUE: repair-workflows
       TEMPORAL_CONNECT_MAX_ATTEMPTS: 30
       SERVICE_VERSION: local
+      INCIDENT_SERVICE_URL: http://incident-service:4020
+      AGENT_RUNNER_URL: http://agent-runner:4040
+      SANDBOX_CONTROLLER_URL: http://sandbox-controller:4030
+      GITHUB_APP_URL: http://github-app:4050
+      SANDBOX_SOURCE_BASE_URL: http://github-app:4050
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
+      DOWNSTREAM_TIMEOUT_MS: 900000
     depends_on:
       temporal:
         condition: service_healthy
@@ -162,6 +195,12 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      API_AUTH_ENABLED: "true"
+      API_AUTH_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
+      MAX_CONCURRENT_DIAGNOSES: ${MAX_CONCURRENT_DIAGNOSES:-20}
+      MAX_QUEUED_DIAGNOSES: ${MAX_QUEUED_DIAGNOSES:-1000}
+      DIAGNOSIS_TIMEOUT_MS: ${DIAGNOSIS_TIMEOUT_MS:-900000}
       MAX_TOOL_CALLS_PER_RUN: ${MAX_TOOL_CALLS_PER_RUN:-30}
       MCP_TOOL_MAX_RESULT_BYTES: ${MCP_TOOL_MAX_RESULT_BYTES:-2000000}
       GIT_EXECUTABLE: git
@@ -188,15 +227,38 @@ services:
     environment:
       HTTP_ADDRESS: :4030
       SERVICE_VERSION: local
+      APP_ENV: development
       SANDBOX_NAMESPACE: sre-agent-sandboxes
       SANDBOX_RUNTIME_CLASS: gvisor
+      SANDBOX_NODE_IMAGE: ${SANDBOX_NODE_IMAGE:-sre-agent/sandbox-node:local}
+      SANDBOX_GO_IMAGE: ${SANDBOX_GO_IMAGE:-sre-agent/sandbox-go:local}
+      API_AUTH_ENABLED: "true"
+      API_AUTH_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
+      SOURCE_AUTH_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
     ports:
       - "4030:4030"
     volumes:
       - ${KUBECONFIG:-~/.kube/config}:/home/nonroot/.kube/config:ro
+
+  github-app:
+    profiles: ["github"]
+    build:
+      context: ./Backend/services/github-app
+    environment:
+      HTTP_ADDRESS: :4050
+      APP_ENV: development
+      SERVICE_VERSION: local
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_PRIVATE_KEY_BASE64: ${GITHUB_APP_PRIVATE_KEY_BASE64:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      API_AUTH_ENABLED: "true"
+      API_AUTH_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
+    ports:
+      - "4050:4050"
 
 volumes:
   sre_agent_postgres:
   agent_runner_data:
   sre_agent_loki:
   sre_agent_prometheus:
+  sre_agent_otel_queue:

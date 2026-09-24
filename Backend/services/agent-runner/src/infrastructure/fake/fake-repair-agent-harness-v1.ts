@@ -27,7 +27,11 @@ export class FakeRepairAgentHarnessV1 extends RepairAgentHarness {
       model: "fake-diagnostic-model",
       sessionId: `fake-${request.repairRunId}`,
       status: "completed",
-      finalResponse: `Fake diagnosis for incident ${request.incident.id}`,
+      finalResponse: JSON.stringify({
+        decision: "abstain",
+        summary: `Fake harness does not diagnose incident ${request.incident.id}.`,
+        changes: [],
+      }),
       events: [event],
     };
   }

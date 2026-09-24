@@ -1,6 +1,12 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import type { AgentReadinessProbe } from "./application/contracts/agent-readiness-probe.js";
+import type { DiagnosisAdmissionController } from "./application/contracts/diagnosis-admission-controller.js";
 import type { IncidentDiagnosisService } from "./application/contracts/incident-diagnosis-service.js";
 import type { RepairToolCatalog } from "./application/contracts/repair-tool.js";
+import type { RequestAuthenticator } from "./application/contracts/request-authenticator.js";
+import { BearerTokenRequestAuthenticatorV1 } from "./application/implementations/bearer-token-request-authenticator-v1.js";
+import { BoundedDiagnosisAdmissionControllerV1 } from "./application/implementations/bounded-diagnosis-admission-controller-v1.js";
+import { ConfiguredAgentReadinessProbeV1 } from "./application/implementations/configured-agent-readiness-probe-v1.js";
 import { DiagnosisPromptBuilderV1 } from "./application/implementations/diagnosis-prompt-builder-v1.js";
 import { IncidentDiagnosisServiceV1 } from "./application/implementations/incident-diagnosis-service-v1.js";
 import { RepairAgentHarnessRegistryV1 } from "./application/implementations/repair-agent-harness-registry-v1.js";
@@ -15,6 +21,9 @@ import { registerAgentRoutes } from "./presentation/register-agent-routes.js";
 export interface AppDependencies {
   diagnoses: IncidentDiagnosisService;
   tools: RepairToolCatalog;
+  admission: DiagnosisAdmissionController;
+  authenticator: RequestAuthenticator;
+  readiness: AgentReadinessProbe;
 }
 
 export function buildApp(
@@ -24,12 +33,25 @@ export function buildApp(
   const app = Fastify({
     logger: config.NODE_ENV !== "test",
     requestIdHeader: "x-request-id",
+    bodyLimit: config.BODY_LIMIT_BYTES,
+    requestTimeout: config.REQUEST_TIMEOUT_MS,
+    connectionTimeout: config.REQUEST_TIMEOUT_MS,
+    keepAliveTimeout: 72_000,
+    maxRequestsPerSocket: config.MAX_REQUESTS_PER_SOCKET,
   });
 
-  registerAgentRoutes(app, dependencies.diagnoses, dependencies.tools, {
-    serviceName: config.SERVICE_NAME,
-    serviceVersion: config.SERVICE_VERSION,
-  });
+  registerAgentRoutes(
+    app,
+    dependencies.diagnoses,
+    dependencies.tools,
+    dependencies.admission,
+    dependencies.authenticator,
+    dependencies.readiness,
+    {
+      serviceName: config.SERVICE_NAME,
+      serviceVersion: config.SERVICE_VERSION,
+    },
+  );
   return app;
 }
 
@@ -51,5 +73,15 @@ export function createDependencies(config: AgentRunnerConfig): AppDependencies {
   return {
     diagnoses: new IncidentDiagnosisServiceV1(registry.resolve(config.AGENT_HARNESS)),
     tools,
+    admission: new BoundedDiagnosisAdmissionControllerV1(
+      config.MAX_CONCURRENT_DIAGNOSES,
+      config.MAX_QUEUED_DIAGNOSES,
+      config.DIAGNOSIS_TIMEOUT_MS,
+    ),
+    authenticator: new BearerTokenRequestAuthenticatorV1(
+      config.API_AUTH_ENABLED,
+      config.API_AUTH_TOKEN,
+    ),
+    readiness: new ConfiguredAgentReadinessProbeV1(config),
   };
 }

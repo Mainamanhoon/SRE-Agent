@@ -14,13 +14,22 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/sre-agent/sandbox-controller/internal/admission"
 	"github.com/sre-agent/sandbox-controller/internal/api"
 	"github.com/sre-agent/sandbox-controller/internal/application"
+	"github.com/sre-agent/sandbox-controller/internal/config"
 	sandboxkubernetes "github.com/sre-agent/sandbox-controller/internal/kubernetes"
+	"github.com/sre-agent/sandbox-controller/internal/metrics"
 	"github.com/sre-agent/sandbox-controller/internal/policy"
+	"github.com/sre-agent/sandbox-controller/internal/security"
 )
 
 func main() {
+	settings, err := config.Load()
+	if err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
 	clusterConfig, err := kubernetesConfig()
 	if err != nil {
 		slog.Error("cannot configure Kubernetes client", "error", err)
@@ -34,18 +43,26 @@ func main() {
 
 	provisioner := sandboxkubernetes.NewJobProvisionerV1(
 		client,
-		envOrDefault("SANDBOX_NAMESPACE", "sre-agent-sandboxes"),
-		envOrDefault("SANDBOX_RUNTIME_CLASS", "gvisor"),
+		settings.Namespace,
+		settings.RuntimeClass,
+		settings.SourceAuthToken,
 	)
 	images := policy.NewToolchainImageResolverV1(map[string]string{
-		"node": envOrDefault("SANDBOX_NODE_IMAGE", "node:22-bookworm-slim"),
-		"go":   envOrDefault("SANDBOX_GO_IMAGE", "golang:1.24-bookworm"),
+		"node": settings.NodeImage,
+		"go":   settings.GoImage,
 	})
 	sandboxService := application.NewSandboxServiceV1(provisioner, images)
-	address := envOrDefault("HTTP_ADDRESS", ":4030")
+	serviceMetrics := &metrics.SandboxMetricsV1{}
 	server := &http.Server{
-		Addr:              address,
-		Handler:           api.NewHandler(sandboxService, provisioner, envOrDefault("SERVICE_VERSION", "local")),
+		Addr: settings.HTTPAddress,
+		Handler: api.NewHandler(api.HandlerDependencies{
+			Creator: sandboxService, Reader: sandboxService, Deleter: sandboxService,
+			Readiness:     provisioner,
+			Authenticator: security.NewBearerAuthenticatorV1(settings.APIAuthEnabled, settings.APIAuthToken),
+			Limiter:       admission.NewTokenBucketV1(settings.RequestsPerSecond, settings.RequestBurst),
+			Metrics:       serviceMetrics, ServiceVersion: settings.ServiceVersion,
+			BodyLimitBytes: settings.BodyLimitBytes, ReadinessTimeout: settings.ReadinessTimeout,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -56,14 +73,14 @@ func main() {
 	defer stop()
 	go func() {
 		<-shutdownContext.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), settings.ShutdownTimeout)
 		defer cancel()
 		if shutdownErr := server.Shutdown(ctx); shutdownErr != nil {
 			slog.Error("graceful shutdown failed", "error", shutdownErr)
 		}
 	}()
 
-	slog.Info("sandbox controller listening", "address", address)
+	slog.Info("sandbox controller listening", "address", settings.HTTPAddress)
 	if err = server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("sandbox controller stopped", "error", err)
 		os.Exit(1)
@@ -81,11 +98,4 @@ func kubernetesConfig() (*rest.Config, error) {
 		}
 	}
 	return clientcmd.BuildConfigFromFlags("", kubeconfig)
-}
-
-func envOrDefault(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
 }

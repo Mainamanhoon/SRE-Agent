@@ -22,6 +22,7 @@ const incidentSchema = z.object({
 export interface HttpEvidenceSourceOptions {
   timeoutMs: number;
   maxResponseBytes: number;
+  headers?: Readonly<Record<string, string>>;
 }
 
 export class HttpIncidentEvidenceSourceV1 extends IncidentEvidenceSource {

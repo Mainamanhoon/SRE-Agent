@@ -1,0 +1,235 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: control-api }
+  template:
+    metadata:
+      labels: { app: control-api }
+    spec:
+      securityContext: { runAsNonRoot: true }
+      containers:
+        - name: control-api
+          image: registry.example/sre-agent/control-api:REPLACE_ME
+          ports: [{ name: http, containerPort: 4000 }]
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: INCIDENT_DETECTOR_URL, value: http://incident-detector:4010 }
+            - { name: INCIDENT_SERVICE_URL, value: http://incident-service:4020 }
+            - { name: AGENT_RUNNER_URL, value: http://agent-runner:4040 }
+            - { name: AGENT_RUNNER_REQUIRED, value: "true" }
+            - { name: TEMPORAL_ADDRESS, value: temporal:7233 }
+            - { name: API_AUTH_ENABLED, value: "true" }
+            - { name: OTEL_ENABLED, value: "true" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector:4318 }
+            - { name: REQUESTS_PER_SECOND, value: "2000" }
+            - { name: REQUEST_BURST, value: "4000" }
+            - name: API_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: control-api-token } }
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: "2", memory: 1Gi }
+          readinessProbe:
+            httpGet: { path: /api/v1/health/ready, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/v1/health/live, port: http }
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: control-api }
+spec:
+  selector: { app: control-api }
+  ports: [{ name: http, port: 4000, targetPort: http }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: control-api }
+spec:
+  minAvailable: 2
+  selector: { matchLabels: { app: control-api } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: control-api }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: control-api }
+  minReplicas: 3
+  maxReplicas: 30
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies: [{ type: Percent, value: 100, periodSeconds: 30 }]
+    scaleDown: { stabilizationWindowSeconds: 300 }
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: incident-detector }
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: incident-detector }
+  template:
+    metadata:
+      labels: { app: incident-detector }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "4010", prometheus.io/path: /metrics }
+    spec:
+      securityContext: { runAsNonRoot: true }
+      containers:
+        - name: incident-detector
+          image: registry.example/sre-agent/incident-detector:REPLACE_ME
+          ports: [{ name: http, containerPort: 4010 }]
+          env:
+            - { name: APP_ENV, value: production }
+            - { name: INCIDENT_SERVICE_URL, value: http://incident-service:4020 }
+            - { name: API_AUTH_ENABLED, value: "true" }
+            - { name: REQUESTS_PER_SECOND, value: "2000" }
+            - { name: REQUEST_BURST, value: "4000" }
+            - name: API_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
+          resources:
+            requests: { cpu: 250m, memory: 128Mi }
+            limits: { cpu: "2", memory: 512Mi }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: incident-detector }
+spec:
+  selector: { app: incident-detector }
+  ports: [{ name: http, port: 4010, targetPort: http }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: incident-detector }
+spec:
+  minAvailable: 2
+  selector: { matchLabels: { app: incident-detector } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: incident-detector }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: incident-detector }
+  minReplicas: 3
+  maxReplicas: 50
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies: [{ type: Percent, value: 100, periodSeconds: 30 }]
+    scaleDown: { stabilizationWindowSeconds: 300 }
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: agent-runner }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: agent-runner }
+  template:
+    metadata:
+      labels: { app: agent-runner }
+    spec:
+      serviceAccountName: agent-runner
+      securityContext: { runAsNonRoot: true }
+      containers:
+        - name: agent-runner
+          image: registry.example/sre-agent/agent-runner:REPLACE_ME
+          ports: [{ name: http, containerPort: 4040 }]
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: AGENT_HARNESS, value: deepseek }
+            - { name: DEEPSEEK_PROVIDER, value: google }
+            - { name: DEEPSEEK_MODEL, value: gemini-3.8-flash }
+            - { name: CONTROL_API_URL, value: http://control-api:4000 }
+            - { name: INCIDENT_SERVICE_URL, value: http://incident-service:4020 }
+            - { name: API_AUTH_ENABLED, value: "true" }
+            - { name: AGENT_WORKSPACE_PATH, value: /workspace }
+            - { name: MAX_CONCURRENT_DIAGNOSES, value: "20" }
+            - { name: MAX_QUEUED_DIAGNOSES, value: "1000" }
+            - name: API_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
+            - name: GEMINI_API_KEY
+              valueFrom: { secretKeyRef: { name: sre-agent-model-provider, key: gemini-api-key } }
+          volumeMounts:
+            - { name: workspace, mountPath: /workspace, readOnly: true }
+            - { name: state, mountPath: /var/lib/agent-runner }
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+          readinessProbe:
+            httpGet: { path: /api/v1/health/ready, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/v1/health/live, port: http }
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+      volumes:
+        - name: workspace
+          persistentVolumeClaim: { claimName: agent-workspace }
+        - name: state
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata: { name: agent-runner }
+spec:
+  selector: { app: agent-runner }
+  ports: [{ name: http, port: 4040, targetPort: http }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: agent-runner }
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app: agent-runner } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: agent-runner }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: agent-runner }
+  minReplicas: 2
+  maxReplicas: 20
+  behavior:
+    scaleDown: { stabilizationWindowSeconds: 600 }
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }

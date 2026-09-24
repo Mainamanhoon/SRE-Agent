@@ -76,4 +76,28 @@ describe("agent runner API", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ code: "INVALID_DIAGNOSIS_REQUEST" });
   });
+
+  it("protects non-health routes when API authentication is enabled", async () => {
+    const token = "production-test-token-that-is-long";
+    const app = buildApp(
+      loadConfig({
+        NODE_ENV: "test",
+        AGENT_HARNESS: "fake",
+        API_AUTH_ENABLED: "true",
+        API_AUTH_TOKEN: token,
+      }),
+    );
+    openApps.push(app);
+
+    const health = await app.inject({ method: "GET", url: "/api/v1/health/live" });
+    expect(health.statusCode).toBe(200);
+    const unauthorized = await app.inject({ method: "GET", url: "/api/v1/tools" });
+    expect(unauthorized.statusCode).toBe(401);
+    const authorized = await app.inject({
+      method: "GET",
+      url: "/api/v1/tools",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(authorized.statusCode).toBe(200);
+  });
 });

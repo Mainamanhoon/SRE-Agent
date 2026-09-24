@@ -19,4 +19,5 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build --chown=node:node /out ./
 USER node
+EXPOSE 4060
 CMD ["node", "dist/worker.js"]

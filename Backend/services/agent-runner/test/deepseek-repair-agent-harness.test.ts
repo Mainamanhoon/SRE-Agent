@@ -8,6 +8,7 @@ import {
   DeepSeekRuntimeClientFactory,
   type DeepSeekRuntimeLaunchContext,
 } from "../src/infrastructure/deepseek/deepseek-runtime-client.js";
+import { selectHarnessEnvironment } from "../src/infrastructure/deepseek/deepseek-sdk-runtime-client-v1.js";
 
 class StubClient extends DeepSeekRuntimeClient {
   public readonly close = vi.fn(async () => undefined);
@@ -32,6 +33,21 @@ class StubClientFactory extends DeepSeekRuntimeClientFactory {
 }
 
 describe("DeepSeekRepairAgentHarnessV1", () => {
+  it("does not inherit unrelated parent-process secrets", () => {
+    expect(
+      selectHarnessEnvironment({
+        PATH: "/bin",
+        GEMINI_API_KEY: "provider-key",
+        KUBERNETES_SERVICE_HOST: "10.0.0.1",
+        UNRELATED_DATABASE_PASSWORD: "must-not-cross-boundary",
+      }),
+    ).toEqual({
+      PATH: "/bin",
+      GEMINI_API_KEY: "provider-key",
+      KUBERNETES_SERVICE_HOST: "10.0.0.1",
+    });
+  });
+
   it("normalizes the SDK result and always closes the runtime", async () => {
     const client = new StubClient();
     const harness = new DeepSeekRepairAgentHarnessV1(

@@ -11,6 +11,7 @@ This directory is the source of truth for the Autonomous Self-Healing SRE Agent 
 5. [Security and Evaluation](SECURITY_AND_EVALUATION.md) — sandbox policy, threat model, benchmark design, and release gates.
 
 6. [Functionality Catalog](FUNCTIONALITY_CATALOG.md) - living implemented/planned capability inventory and implementation journal.
+7. [Luna Implementation Handoff](LUNA_IMPLEMENTATION_HANDOFF.md) - detailed continuation guide, current boundaries, prioritized milestones, acceptance criteria, and validation commands for future implementation sessions.
 
 ## Exported roadmap copies
 

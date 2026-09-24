@@ -10,3 +10,36 @@ spec:
   policyTypes:
     - Ingress
     - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: repair-sandbox-required-egress
+  namespace: sre-agent-sandboxes
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: repair-sandbox
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: sre-agent
+          podSelector:
+            matchLabels:
+              app: github-app
+      ports:
+        - { protocol: TCP, port: 4050 }
+    # Dependency downloads are constrained to TLS. Production clusters should
+    # route this through an allowlisted package-proxy egress gateway.
+    - ports:
+        - { protocol: TCP, port: 443 }

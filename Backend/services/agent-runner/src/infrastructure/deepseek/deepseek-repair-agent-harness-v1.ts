@@ -5,6 +5,7 @@ import type {
   RepairAgentCapabilities,
   RepairAgentEvent,
   RepairAgentEventObserver,
+  RepairAgentRunOptions,
   RepairAgentRunResult,
 } from "../../domain/repair-agent.js";
 import type { DeepSeekEventMapperV1 } from "./deepseek-event-mapper-v1.js";
@@ -28,21 +29,25 @@ export class DeepSeekRepairAgentHarnessV1 extends RepairAgentHarness {
   public override async diagnose(
     request: DiagnoseIncidentRequest,
     observer?: RepairAgentEventObserver,
+    options?: RepairAgentRunOptions,
   ): Promise<RepairAgentRunResult> {
     const client = this.clients.create({ repairRunId: request.repairRunId });
     const events: RepairAgentEvent[] = [];
     let sequence = 0;
 
     try {
-      const result = await client.run(this.prompts.build(request), {
-        sessionId: `repair-${request.repairRunId}`,
-        onNotification: (notification) => {
-          const event = this.eventMapper.map(notification, sequence);
-          sequence += 1;
-          events.push(event);
-          observer?.(event);
-        },
-      });
+      const result = await raceWithAbort(
+        client.run(this.prompts.build(request), {
+          sessionId: `repair-${request.repairRunId}`,
+          onNotification: (notification) => {
+            const event = this.eventMapper.map(notification, sequence);
+            sequence += 1;
+            events.push(event);
+            observer?.(event);
+          },
+        }),
+        options?.signal,
+      );
 
       return {
         runId: request.repairRunId,
@@ -67,8 +72,20 @@ export class DeepSeekRepairAgentHarnessV1 extends RepairAgentHarness {
       modes: ["diagnosis"],
       streamingEvents: true,
       sessionResume: false,
-      perRunCancellation: false,
+      perRunCancellation: true,
       readOnlyWorkspace: true,
     };
   }
+}
+
+function raceWithAbort<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) {
+    return operation;
+  }
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason ?? new Error("agent run was cancelled"));
+    signal.addEventListener("abort", abort, { once: true });
+    operation.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
 }

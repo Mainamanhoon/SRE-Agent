@@ -6,12 +6,14 @@ All coded services follow the ports-and-adapters and SOLID conventions documente
 
 | Service | Runtime | Local port | Responsibility |
 | --- | --- | ---: | --- |
-| `control-api` | Node.js/TypeScript | 4000 | Operator API and future GitHub App ingress |
+| `control-api` | Node.js/TypeScript | 4000 | Authenticated operator API and Temporal repair-run control |
 | `incident-detector` | Go | 4010 | Candidate validation, normalization, and fingerprinting |
 | `incident-service` | Go/PostgreSQL | 4020 | Durable incident state and occurrence deduplication |
-| `repair-worker` | Node.js/TypeScript/Temporal | none | Durable repair workflow and agent activities |
+| `repair-worker` | Node.js/TypeScript/Temporal | 4060 (health) | Durable diagnose/repair/verify/deliver workflow |
 | `agent-runner` | Node.js/TypeScript/DeepSeek Harness | 4040 | Harness-neutral, read-only diagnostic agent execution |
 | `sandbox-controller` | Go/Kubernetes | 4030 | Creates restricted, disposable repair Jobs |
+| `sandbox-executor` | Go + Node/Go toolchain images | none | Safely extracts, mutates, and verifies one immutable repair task |
+| `github-app` | Go/GitHub App | 4050 | Installation auth, source archives, Git Data commits, and draft PR delivery |
 | `otel-collector` | OpenTelemetry Collector | 4317/4318 | OTLP gateway, batching, memory limiting, and trace/log/metric routing |
 | `loki` | Grafana Loki | 3100 | Local OTLP log storage and LogQL query API |
 | `prometheus` | Prometheus | 9090 | Local metric storage, remote-write ingestion, and PromQL query API |
@@ -32,7 +34,9 @@ kubectl apply -f Backend/services/sandbox-controller/deploy/rbac.yaml
 kubectl apply -f Backend/services/sandbox-controller/deploy/network-policy.yaml
 ```
 
-The sandbox endpoint accepts only a repair-run identifier and an allowlisted toolchain. It deliberately does not accept arbitrary images or commands.
+The sandbox endpoint accepts a bounded immutable task: repair-run ID, source archive URL, deployed commit, explicit file replacements/deletions, and an allowlisted verification profile. It deliberately accepts neither arbitrary images nor commands.
+
+The GitHub App and sandbox controller are opt-in Compose profiles because they require external GitHub/Kubernetes configuration. The complete runtime path is started through `POST /api/v1/repairs`; Temporal provides the durable execution ID and status.
 
 The agent runner currently exposes the first read-only diagnostic slice. Its application layer
 depends on `RepairAgentHarness`; `DeepSeekRepairAgentHarnessV1` is selected through
@@ -47,6 +51,12 @@ application contracts and exposed to the model only through a local MCP adapter,
 unauthenticated HTTP execution endpoint.
 
 ## Production notes
+
+Production-oriented Kubernetes resources for all project-owned backend services
+are documented in [deploy/README.md](deploy/README.md). The repeatable 100,000 requests/minute
+candidate-ingress profile and separate diagnosis benchmark are in
+[load-tests/README.md](load-tests/README.md). They must be executed and tuned in the target
+infrastructure; manifests alone are not a capacity result.
 
 - Replace local credentials and unencrypted internal endpoints with secret-manager and workload-identity integrations.
 - Run PostgreSQL, Temporal, trace storage, and object storage as managed or highly available services.

@@ -56,6 +56,12 @@ export function createRepairToolRuntime(
     timeoutMs: config.READ_ONLY_TOOL_TIMEOUT_MS,
     maxResponseBytes: config.READ_ONLY_TOOL_MAX_RESPONSE_BYTES,
   };
+  const internalHttpOptions = {
+    ...httpOptions,
+    ...(config.INTERNAL_SERVICE_TOKEN
+      ? { headers: { authorization: `Bearer ${config.INTERNAL_SERVICE_TOKEN}` } }
+      : {}),
+  };
   const paths = new CanonicalWorkspacePathPolicyV1(config.AGENT_WORKSPACE_PATH);
   const processes = new NodeReadOnlyProcessRunnerV1();
   const ripgrepOptions = {
@@ -65,10 +71,18 @@ export function createRepairToolRuntime(
   };
   const catalog = new RepairToolCatalogV1([
     new GetServiceTopologyToolV1(
-      new ControlApiServiceTopologySourceV1(http, new URL(config.CONTROL_API_URL), httpOptions),
+      new ControlApiServiceTopologySourceV1(
+        http,
+        new URL(config.CONTROL_API_URL),
+        internalHttpOptions,
+      ),
     ),
     new GetIncidentToolV1(
-      new HttpIncidentEvidenceSourceV1(http, new URL(config.INCIDENT_SERVICE_URL), httpOptions),
+      new HttpIncidentEvidenceSourceV1(
+        http,
+        new URL(config.INCIDENT_SERVICE_URL),
+        internalHttpOptions,
+      ),
     ),
     new GetTraceToolV1(
       new JaegerTraceEvidenceSourceV1(http, new URL(config.TRACE_QUERY_URL), httpOptions),

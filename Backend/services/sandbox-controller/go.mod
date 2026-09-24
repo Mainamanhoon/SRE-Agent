@@ -1,6 +1,6 @@
 module github.com/sre-agent/sandbox-controller
 
-go 1.24.0
+go 1.27.1
 
 require (
 	k8s.io/api v0.34.1

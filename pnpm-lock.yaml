@@ -72,6 +72,9 @@ importers:
       '@opentelemetry/semantic-conventions':
         specifier: ^1.43.0
         version: 1.43.0
+      '@temporalio/client':
+        specifier: ^1.13.2
+        version: 1.23.0
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2

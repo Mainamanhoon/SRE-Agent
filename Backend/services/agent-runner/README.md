@@ -48,6 +48,13 @@ local API development that intentionally does not exercise a model.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `AGENT_HARNESS` | `deepseek` | Harness implementation; use `deepseek` for real runs and `fake` only for deterministic tests |
+| `API_AUTH_ENABLED` | `false` | Bearer authentication; required in production |
+| `API_AUTH_TOKEN` | empty | Inbound service token; minimum 32 characters when enabled |
+| `INTERNAL_SERVICE_TOKEN` | empty | Token sent only to internal control/incident APIs; required in production |
+| `MAX_CONCURRENT_DIAGNOSES` | `20` | Maximum active model runs per replica |
+| `MAX_QUEUED_DIAGNOSES` | `1000` | Bounded per-replica wait queue; excess receives `429` |
+| `DIAGNOSIS_TIMEOUT_MS` | `900000` | Hard deadline for an admitted diagnosis |
+| `BODY_LIMIT_BYTES` | `2000000` | Maximum API request body |
 | `AGENT_WORKSPACE_PATH` | process working directory | Checked-out repository visible to the agent |
 | `AGENT_MCP_SERVER_ENTRYPOINT` | `dist/mcp-server.js` | Absolute MCP stdio server entrypoint passed to Harness |
 | `INCIDENT_SERVICE_URL` | `http://localhost:4020` | Incident read API |
@@ -79,6 +86,13 @@ configured credential. Configure a provider in a Cordis patch and pass its path 
 `DEEPSEEK_PATCH_PATHS`; provider selection then remains a configuration change rather than an
 application-layer change.
 
+Production startup rejects the fake harness and unauthenticated API configuration. Liveness is
+available at `GET /api/v1/health/live`; readiness at `GET /api/v1/health/ready` verifies the selected
+harness credential and compiled MCP entrypoint and reports active/queued admission state. Caller
+disconnects and diagnosis deadlines propagate cancellation to the harness adapter, which closes its
+per-run client. Internal bearer credentials are attached only to control and incident API reads and
+are never sent to Jaeger, Loki, or Prometheus.
+
 ### Gemini preset
 
 The Compose `agent` profile uses the project-owned
@@ -86,9 +100,11 @@ The Compose `agent` profile uses the project-owned
 [`config/project-tools.cordis.patch.yml`](config/project-tools.cordis.patch.yml) presets. They route
 the DeepSeek Harness multi-provider adapter to Google's `google` provider and `gemini-3.8-flash`,
 then connect the ten read-only project tools through a local MCP stdio child. The Gemini patch
-contains only the `GEMINI_API_KEY` credential reference, never the key value. The MCP child receives
-only explicit non-secret configuration; model arguments cannot override the trusted repair-run or
-workspace context.
+contains only the `GEMINI_API_KEY` credential reference, never the key value. The Harness process
+receives an explicit environment allowlist containing required system settings, selected provider
+credentials, and internal API credentials; unrelated parent-process variables are not inherited.
+Model arguments cannot override the trusted repair-run or workspace context, and no project tool
+exposes environment variables.
 
 Set a newly rotated key in the parent process before starting Compose:
 

@@ -15,6 +15,13 @@ func (provisioner *fakeProvisioner) Provision(_ context.Context, input domain.Pr
 	provisioner.input = input
 	return domain.Sandbox{Name: "sandbox-1", Status: "created"}, nil
 }
+func (provisioner *fakeProvisioner) Get(_ context.Context, repairRunID string) (domain.Sandbox, error) {
+	return domain.Sandbox{RepairRunID: repairRunID}, nil
+}
+func (provisioner *fakeProvisioner) Result(_ context.Context, _ string) (domain.SandboxExecutionResult, error) {
+	return domain.SandboxExecutionResult{Status: "succeeded"}, nil
+}
+func (provisioner *fakeProvisioner) Delete(_ context.Context, _ string) error { return nil }
 
 type fakeImages map[string]string
 
@@ -27,7 +34,7 @@ func TestCreateResolvesAnAllowlistedImage(t *testing.T) {
 	provisioner := &fakeProvisioner{}
 	service := NewSandboxServiceV1(provisioner, fakeImages{"node": "trusted/node:1"})
 
-	_, err := service.Create(context.Background(), domain.CreateSandboxInput{RepairRunID: "repair-1", Toolchain: "node"})
+	_, err := service.Create(context.Background(), domain.CreateSandboxInput{RepairRunID: "repair-1", Toolchain: "node", SourceArchiveURL: "https://github-app/api/v1/archive", ExpectedCommit: "abcdef1234567", VerificationProfile: "node", Changes: []domain.SandboxChange{{Path: "src/app.ts", Content: "fixed"}}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
