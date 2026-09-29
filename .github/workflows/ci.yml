@@ -168,19 +168,19 @@ jobs:
             dockerfile: Frontend/Dockerfile
           - name: incident-detector
             context: Backend/services/incident-detector
-            dockerfile: Dockerfile
+            dockerfile: Backend/services/incident-detector/Dockerfile
           - name: incident-service
             context: Backend/services/incident-service
-            dockerfile: Dockerfile
+            dockerfile: Backend/services/incident-service/Dockerfile
           - name: incident-service-migrate
             context: Backend/services/incident-service
-            dockerfile: Dockerfile.migrate
+            dockerfile: Backend/services/incident-service/Dockerfile.migrate
           - name: repair-run-service
             context: Backend/services/repair-run-service
-            dockerfile: Dockerfile
+            dockerfile: Backend/services/repair-run-service/Dockerfile
           - name: repair-run-service-migrate
             context: Backend/services/repair-run-service
-            dockerfile: Dockerfile.migrate
+            dockerfile: Backend/services/repair-run-service/Dockerfile.migrate
           - name: repair-worker
             context: .
             dockerfile: Backend/services/repair-worker/Dockerfile
@@ -189,22 +189,22 @@ jobs:
             dockerfile: Backend/services/agent-runner/Dockerfile
           - name: sandbox-controller
             context: Backend/services/sandbox-controller
-            dockerfile: Dockerfile
+            dockerfile: Backend/services/sandbox-controller/Dockerfile
           - name: sandbox-executor-node
             context: Backend/services/sandbox-executor
-            dockerfile: Dockerfile.node
+            dockerfile: Backend/services/sandbox-executor/Dockerfile.node
           - name: sandbox-executor-go
             context: Backend/services/sandbox-executor
-            dockerfile: Dockerfile.go-toolchain
+            dockerfile: Backend/services/sandbox-executor/Dockerfile.go-toolchain
           - name: github-app
             context: Backend/services/github-app
-            dockerfile: Dockerfile
+            dockerfile: Backend/services/github-app/Dockerfile
           - name: github-app-migrate
             context: Backend/services/github-app
-            dockerfile: Dockerfile.migrate
+            dockerfile: Backend/services/github-app/Dockerfile.migrate
           - name: otel-collector
             context: Backend/services/otel-collector
-            dockerfile: Dockerfile
+            dockerfile: Backend/services/otel-collector/Dockerfile
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
