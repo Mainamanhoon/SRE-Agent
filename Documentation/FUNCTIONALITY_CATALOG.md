@@ -20,19 +20,19 @@ GitHub, and Kubernetes-cluster acceptance still depends on deployment credential
 
 | Workstream | Current state | What is available now | Main remaining work |
 | --- | --- | --- | --- |
-| CI and release evidence | Implemented | Pull-request language checks, PostgreSQL migration replay, strict manifests/collector validation, secret scan, image SBOM/provenance, vulnerability scan, and immutable release digests | First GitHub Actions run and tag-based GHCR publication |
+| CI and release evidence | Implemented | Pull-request language checks, PostgreSQL migration replay, strict manifests/collector validation, secret scan, image SBOM/provenance, vulnerability scan, and immutable release digests | Hosted non-image gates are green; image publication is blocked by hosted image-job failures and requires a successful tagged run |
 | Repository and service foundation | Verified | Monorepo, shared commands, independently deployable services, Dockerfiles, Compose, clean architecture boundaries, and Kubernetes core-service manifests | CI/CD and environment-specific ingress/network/secret overlays |
 | Incident detection and storage | Verified | Candidate validation, normalization, fingerprinting, authenticated durable handoff, bounded retry, PostgreSQL persistence, deduplication, and incident reads | Run target-environment database integration and capacity tests |
-| Durable orchestration | Verified | Complete Temporal diagnose/plan/sandbox/verify/deliver state machine, incident transitions, retry policy, idempotent run IDs, health endpoints, and cleanup | Add a durable repair-run projection optimized for UI queries |
+| Durable orchestration | Verified | Complete Temporal diagnose/plan/sandbox/verify/deliver state machine, incident transitions, retry policy, idempotent run IDs, health endpoints, cleanup, and PostgreSQL repair-run projection | Deploy and validate reconciliation scheduling and historical alert behavior |
 | Agent harness | Verified | `RepairAgentHarness` abstraction, DeepSeek Harness v1 implementation, test-only fake implementation, and configuration-based selection | Add benchmark adapters for other harnesses and run live provider evaluation |
 | Diagnostic evidence tools | Verified | Ten read-only tools for topology, incidents, traces, logs, metrics, deployment rollout state, Git history, source reads, code search, and test discovery | Add provider adapters when a non-Kubernetes deployment target is selected |
-| Tool safety and transport | Verified | MCP stdio transport, read-only authorization, per-run call budgets, result caps, cancellation, trusted context, and metadata-only audit events | Durable/distributed budgets and production audit storage |
+| Tool safety and transport | Implemented | MCP stdio transport, read-only authorization, per-run call budgets, result caps, cancellation, trusted context, metadata-only audit events, and an HTTP durable-audit adapter backed by repair-run events | Deploy a distributed/global quota backend and validate retention/operations in the target environment |
 | Observability platform | Verified | OTel receiver, redaction/resource processors, durable queues/retries, Jaeger/Loki/Prometheus routing, and local backends | Add product dashboards/alerts and internal TLS overlay |
 | Disposable repair sandbox | Implemented | Idempotent Kubernetes Job/Secret lifecycle, project-owned executor images, safe archive extraction, explicit file mutation, fixed Node/Go verification, result retrieval, RBAC, and network policy | Run the Job acceptance test in the target gVisor-enabled cluster |
 | GitHub and delivery | Verified | GitHub App JWT/installation tokens, signed webhooks, bounded source archives, Git Data blobs/trees/commits, deterministic branches, and idempotent draft PRs | Run live acceptance against a test GitHub App installation |
-| Frontend | Foundation verified | React/Vite shell and backend health/status view | Incident queue, repair-run timeline, evidence, diff, verification, and approval screens |
+| Frontend | Verified | React/Vite operational console with incident queue, detail/timeline, repair-run events, evidence, bounded repair start, and same-origin API proxy | Live deployment/accessibility and UX hardening |
 | Scale and reliability | Implemented | Fail-closed production config, bounded requests/responses, ingress rate limits, diagnosis concurrency/queue/deadlines, retries, readiness, disruption budgets, HPAs, and a 1,667 requests/second k6 profile | Execute and tune the 100k requests/minute test in production-like infrastructure; define measured SLOs and add distributed/global quotas where required |
-| End-to-end autonomous repair | Implemented | `Detect -> Diagnose -> Plan -> Sandbox -> Verify -> Draft PR -> Awaiting review`, with a real Temporal orchestration smoke against controlled service doubles | Run live provider/GitHub/Kubernetes acceptance and add merge/rollback follow-up workflows |
+| End-to-end autonomous repair | Implemented | `Detect -> Diagnose -> Plan -> Sandbox -> Verify -> Draft PR -> Awaiting review`, with a real Temporal orchestration smoke against controlled service doubles | Run live provider/GitHub/Kubernetes acceptance; merge/rollback/recovery follow-ups remain opt-in product scope |
 
 ### Latest verification baseline
 
@@ -348,3 +348,23 @@ retryable, and persist a result reference rather than large raw evidence.
 - This is local readiness evidence, not production certification. Live GitHub/model credentials,
   managed dependencies, Kubernetes/gVisor, object-storage restart tests, and sustained 100k
   requests/minute SLO evidence remain external acceptance gates.
+
+### 2026-09-30 - Hosted CI portability and durable tool audit boundary
+
+- Hosted GitHub Actions non-image gates were rerun after two portability fixes: the JavaScript
+  tool test now uses the CI-provided absolute `ripgrep` path, and secure diagnostic workspace
+  cleanup recursively restores permissions before removal. The latest hosted run passed the
+  JavaScript/TypeScript, Go, manifest, and secret-scan jobs; its container image matrix still
+  requires hosted-log/registry permissions and a clean tagged run before GHCR publication can be
+  claimed.
+- Added `HttpRepairToolAuditSinkV1`, which records bounded metadata-only tool invocations as
+  idempotent `tool_invocation` events in the durable repair-run PostgreSQL projection. Production
+  Kubernetes configuration enables this sink; local Compose keeps the JSON-lines sink by default
+  for credential-free development. Production configuration fails closed when durable audit is
+  disabled.
+- Added coverage for the durable audit HTTP boundary, extended repair-run metadata validation,
+  and verified repository lint, TypeScript typecheck/tests, repair-run Go tests, Compose parsing,
+  and strict Kubernetes schema validation.
+- No hosted deployment, real provider diagnosis, GitHub App acceptance, gVisor Job run, object
+  storage restart test, alert-history validation, or 100k/minute load result is claimed here;
+  those require target infrastructure and credentials.

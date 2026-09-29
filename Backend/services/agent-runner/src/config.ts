@@ -14,6 +14,7 @@ const environmentSchema = z
     SERVICE_NAME: z.string().min(1).default("agent-runner"),
     SERVICE_VERSION: z.string().min(1).default("local"),
     CONTROL_API_URL: z.url().default("http://localhost:4000"),
+    REPAIR_RUN_SERVICE_URL: z.url().default("http://localhost:4070"),
     INCIDENT_SERVICE_URL: z.url().default("http://localhost:4020"),
     TRACE_QUERY_URL: z.url().default("http://localhost:16686"),
     LOKI_QUERY_URL: z.url().default("http://localhost:3100"),
@@ -67,6 +68,7 @@ const environmentSchema = z
       .max(20_000_000)
       .default(2_000_000),
     MAX_TOOL_CALLS_PER_RUN: z.coerce.number().int().positive().max(1_000).default(30),
+    DURABLE_AUDIT_ENABLED: booleanString,
     GIT_EXECUTABLE: z.string().min(1).default("git"),
     RIPGREP_EXECUTABLE: z.string().min(1).default("rg"),
   })
@@ -97,6 +99,13 @@ const environmentSchema = z
         code: "custom",
         path: ["INTERNAL_SERVICE_TOKEN"],
         message: "internal service token must contain at least 32 characters in production",
+      });
+    }
+    if (config.NODE_ENV === "production" && !config.DURABLE_AUDIT_ENABLED) {
+      context.addIssue({
+        code: "custom",
+        path: ["DURABLE_AUDIT_ENABLED"],
+        message: "durable repair-tool audit is required in production",
       });
     }
   });

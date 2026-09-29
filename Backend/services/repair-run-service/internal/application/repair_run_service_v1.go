@@ -27,7 +27,8 @@ var (
 		"expectedCommit": {}, "changedPaths": {}, "checkNames": {},
 		"pullRequestUrl": {}, "pullRequestNumber": {}, "verificationStatus": {},
 		"harness": {}, "model": {}, "policyVersion": {}, "riskScore": {},
-		"reviewState": {}, "mergeCommit": {},
+		"reviewState": {}, "mergeCommit": {}, "toolName": {}, "toolVersion": {},
+		"permission": {}, "durationMs": {}, "errorCode": {}, "auditOccurredAt": {},
 	}
 )
 

@@ -1415,3 +1415,43 @@ The product is locally test-ready, but not production-certified. Do not claim pr
 until live GitHub/provider credentials, managed PostgreSQL/Temporal/object storage, Kubernetes and
 gVisor scheduling, pod-restart artifact recovery, hosted CI/tag publication, and the k6 target of
 1,667 requests/second (100,000 requests/minute) have been executed and their evidence recorded.
+
+## 20. Production-scope execution checkpoint (2026-09-30)
+
+This checkpoint records the first hosted workflow execution and the remaining external gates. The
+hosted JavaScript/TypeScript, Go, manifest, and secret-scan jobs passed after two CI portability
+fixes: CI installs and selects an absolute `ripgrep` binary, and secure diagnostic workspace
+cleanup recursively restores read-only snapshot permissions before removal. The image matrix still
+failed in the hosted run, so no GHCR image or release tag is claimed until a clean tagged run has
+completed with registry permissions and image-scan evidence.
+
+The agent runner now has an explicit durable audit boundary. `HttpRepairToolAuditSinkV1` posts
+bounded metadata-only `tool_invocation` events to the repair-run service, whose PostgreSQL event
+projection provides transactional persistence and idempotency. Production Kubernetes configuration
+enables this sink and production configuration rejects a disabled durable audit flag. Local Compose
+continues to default to the JSON-lines sink so local tests do not require service credentials. This
+is durable audit storage for tool metadata; it does not by itself provide distributed/global quotas.
+
+The current implementation status for the user's production checklist is:
+
+1. Hosted CI is partially evidenced; the first clean tagged GHCR publication is pending.
+2. Managed PostgreSQL, Temporal, Kubernetes, registry, and object storage are deployment gates,
+   not available in this workspace.
+3. Live GitHub App acceptance needs an installed test App and disposable repository.
+4. Real DeepSeek/provider diagnosis requires provider credentials and `AGENT_HARNESS=deepseek`;
+   the fake harness remains test-only and is not a fallback.
+5. gVisor sandbox Jobs require a target cluster context and admission policy.
+6. Object-storage signed URL, pod-restart, and recovery checks require a configured bucket and
+   workload identity.
+7. Reconciliation scheduling and historical alert behavior require deployed scheduler,
+   Prometheus, and alert-history access.
+8. The k6 profile is checked in at 1,667 requests/second; p95, p99, error, and dropped-request
+   results must be recorded from the target environment.
+9. Merge approval, rollback, and recovery workflows remain opt-in follow-up scope. Auto-merge is
+   intentionally disabled until health gates, rollback semantics, and explicit product approval
+   exist.
+10. Local quotas are per replica. A distributed quota adapter (Redis, Envoy rate-limit service,
+    or cloud quota system) and durable audit retention policy must be selected and wired for a
+    multi-region/global deployment.
+
+Do not mark any of these external gates complete from local unit tests or Compose validation.

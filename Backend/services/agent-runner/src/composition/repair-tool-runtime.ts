@@ -20,6 +20,7 @@ import { QueryMetricsToolV1 } from "../application/tools/query-metrics-tool-v1.j
 import { ReadFileRangeToolV1 } from "../application/tools/read-file-range-tool-v1.js";
 import { SearchCodeToolV1 } from "../application/tools/search-code-tool-v1.js";
 import type { AgentRunnerConfig } from "../config.js";
+import { HttpRepairToolAuditSinkV1 } from "../infrastructure/audit/http-repair-tool-audit-sink-v1.js";
 import { JsonLinesRepairToolAuditSinkV1 } from "../infrastructure/audit/json-lines-repair-tool-audit-sink-v1.js";
 import { SystemRepairToolClockV1 } from "../infrastructure/clock/system-repair-tool-clock-v1.js";
 import { ControlApiServiceTopologySourceV1 } from "../infrastructure/http/control-api-service-topology-source-v1.js";
@@ -117,7 +118,14 @@ export function createRepairToolRuntime(
     new FindTestsToolV1(new RipgrepTestFileSourceV1(paths, processes, ripgrepOptions)),
   ]);
   const audit =
-    options.audit ?? new JsonLinesRepairToolAuditSinkV1((line) => process.stderr.write(line));
+    options.audit ??
+    (config.DURABLE_AUDIT_ENABLED
+      ? new HttpRepairToolAuditSinkV1({
+          baseUrl: config.REPAIR_RUN_SERVICE_URL,
+          serviceToken: config.INTERNAL_SERVICE_TOKEN,
+          timeoutMs: config.READ_ONLY_TOOL_TIMEOUT_MS,
+        })
+      : new JsonLinesRepairToolAuditSinkV1((line) => process.stderr.write(line)));
   const authorization = new AllowlistedRepairToolAuthorizationPolicyV1(
     options.allowedPermissions ?? ["read"],
   );

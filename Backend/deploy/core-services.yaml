@@ -174,6 +174,8 @@ spec:
             - { name: DEEPSEEK_PROVIDER, value: google }
             - { name: DEEPSEEK_MODEL, value: gemini-3.8-flash }
             - { name: CONTROL_API_URL, value: http://control-api:4000 }
+            - { name: REPAIR_RUN_SERVICE_URL, value: http://repair-run-service:4070 }
+            - { name: DURABLE_AUDIT_ENABLED, value: "true" }
             - { name: INCIDENT_SERVICE_URL, value: http://incident-service:4020 }
             - { name: API_AUTH_ENABLED, value: "true" }
             - { name: AGENT_WORKSPACE_PATH, value: /workspace }
