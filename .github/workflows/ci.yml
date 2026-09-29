@@ -14,6 +14,8 @@ jobs:
   javascript:
     name: JavaScript and TypeScript
     runs-on: ubuntu-latest
+    env:
+      RIPGREP_EXECUTABLE: /usr/bin/rg
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -28,6 +30,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends ripgrep
+          command -v "$RIPGREP_EXECUTABLE"
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck

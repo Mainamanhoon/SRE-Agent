@@ -214,7 +214,11 @@ describe("workspace infrastructure", () => {
     );
     const paths = new CanonicalWorkspacePathPolicyV1(root);
     const processes = new NodeReadOnlyProcessRunnerV1();
-    const options = { executable: "rg", timeoutMs: 5_000, maxOutputBytes: 100_000 };
+    const options = {
+      executable: process.env.RIPGREP_EXECUTABLE ?? "rg",
+      timeoutMs: 5_000,
+      maxOutputBytes: 100_000,
+    };
 
     const files = new NodeWorkspaceFileSourceV1(paths, 100_000);
     await expect(files.readRange("src/calculator.ts", 1, 1)).resolves.toMatchObject({
