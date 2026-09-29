@@ -20,7 +20,9 @@
     "@deepseek-ai/dsh-sdk-client": "0.1.6-alpha.2",
     "@kubernetes/client-node": "1.4.0",
     "@modelcontextprotocol/server": "2.0.0",
+    "@types/tar-stream": "^3.1.4",
     "fastify": "^5.7.4",
+    "tar-stream": "^3.2.1",
     "zod": "^4.5.4"
   },
   "devDependencies": {

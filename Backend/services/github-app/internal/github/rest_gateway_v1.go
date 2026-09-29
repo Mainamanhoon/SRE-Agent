@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/sre-agent/github-app/internal/application"
@@ -17,6 +18,9 @@ import (
 )
 
 var _ application.GitHubGateway = (*RESTGatewayV1)(nil)
+var _ application.RepairRunIdentityVerifier = (*RESTGatewayV1)(nil)
+
+var repairRunTrailerPattern = regexp.MustCompile(`(?m)^SRE-Agent-Repair-Run:\s*([A-Za-z0-9][A-Za-z0-9._-]{0,62})\s*$`)
 
 type RESTGatewayV1 struct {
 	baseURL string
@@ -115,6 +119,19 @@ func (gateway *RESTGatewayV1) CommitMatchesRepair(ctx context.Context, installat
 		return false, err
 	}
 	return strings.Contains(result.Message, "SRE-Agent-Repair-Run: "+repairRunID) && len(result.Parents) == 1 && result.Parents[0].SHA == parent, nil
+}
+func (gateway *RESTGatewayV1) RepairRunIDFromCommit(ctx context.Context, installationID int64, repository, commit string) (string, error) {
+	var result struct {
+		Message string `json:"message"`
+	}
+	if err := gateway.json(ctx, http.MethodGet, installationID, repository, "/git/commits/"+url.PathEscape(commit), nil, &result, http.StatusOK); err != nil {
+		return "", err
+	}
+	matches := repairRunTrailerPattern.FindAllStringSubmatch(result.Message, 2)
+	if len(matches) != 1 {
+		return "", nil
+	}
+	return matches[0][1], nil
 }
 func (gateway *RESTGatewayV1) CreateReference(ctx context.Context, installationID int64, repository, branch, commit string) error {
 	return gateway.json(ctx, http.MethodPost, installationID, repository, "/git/refs", map[string]string{"ref": "refs/heads/" + branch, "sha": commit}, nil, http.StatusCreated)

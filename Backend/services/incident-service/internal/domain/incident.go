@@ -50,3 +50,21 @@ type IncidentPage struct {
 type IncidentStatusUpdate struct {
 	Status string `json:"status"`
 }
+
+type IncidentOccurrencePage struct {
+	Items      []IncidentOccurrence `json:"items"`
+	NextCursor string               `json:"nextCursor,omitempty"`
+}
+
+type IncidentActions struct {
+	IncidentID     string   `json:"incidentId"`
+	CurrentStatus  string   `json:"currentStatus"`
+	AllowedActions []string `json:"allowedActions"`
+}
+
+type IncidentOccurrenceQuery struct {
+	IncidentID       string
+	Limit            int
+	BeforeObservedAt time.Time
+	BeforeID         int64
+}

@@ -1,5 +1,6 @@
 import type { RepairWorkflowInput, TriageResult } from "../../contracts.js";
 import { IncidentTriagePolicy } from "../contracts/incident-triage-policy.js";
+import { ConservativeRepairEligibilityPolicyV1 } from "./conservative-repair-policy-v1.js";
 
 export class RequiredEvidenceTriagePolicyV1 extends IncidentTriagePolicy {
   public override async evaluate(input: RepairWorkflowInput): Promise<TriageResult> {
@@ -19,9 +20,13 @@ export class RequiredEvidenceTriagePolicyV1 extends IncidentTriagePolicy {
       };
     }
 
+    const policy = new ConservativeRepairEligibilityPolicyV1().evaluate(input);
+    if (!policy.allowed)
+      return { eligible: false, reason: `${policy.reasonCode}: ${policy.summary}` };
+
     return {
       eligible: true,
-      reason: "The incident has enough identity and source-version evidence to continue.",
+      reason: `${policy.reasonCode}: ${policy.summary}`,
     };
   }
 }

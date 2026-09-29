@@ -35,9 +35,10 @@ type InstallationTokenProviderV1 struct {
 	mu         sync.Mutex
 	cache      map[int64]cachedToken
 	locks      map[int64]*sync.Mutex
+	state      application.InstallationStateReader
 }
 
-func NewInstallationTokenProviderV1(appID int64, privateKeyPEM, baseURL string, client *http.Client) (*InstallationTokenProviderV1, error) {
+func NewInstallationTokenProviderV1(appID int64, privateKeyPEM, baseURL string, client *http.Client, state ...application.InstallationStateReader) (*InstallationTokenProviderV1, error) {
 	block, _ := pem.Decode([]byte(privateKeyPEM))
 	if block == nil {
 		return nil, errors.New("GITHUB_APP_PRIVATE_KEY_PEM is invalid")
@@ -54,10 +55,24 @@ func NewInstallationTokenProviderV1(appID int64, privateKeyPEM, baseURL string, 
 	if !ok {
 		return nil, errors.New("GitHub App private key must be RSA")
 	}
-	return &InstallationTokenProviderV1{appID: appID, privateKey: key, baseURL: baseURL, client: client, cache: map[int64]cachedToken{}, locks: map[int64]*sync.Mutex{}}, nil
+	provider := &InstallationTokenProviderV1{appID: appID, privateKey: key, baseURL: baseURL, client: client, cache: map[int64]cachedToken{}, locks: map[int64]*sync.Mutex{}}
+	if len(state) > 0 {
+		provider.state = state[0]
+	}
+	return provider, nil
 }
 
 func (provider *InstallationTokenProviderV1) Token(ctx context.Context, installationID int64) (string, error) {
+	if provider.state != nil {
+		active, err := provider.state.InstallationAvailable(ctx, installationID)
+		if err != nil {
+			return "", errors.New("cannot verify GitHub installation availability")
+		}
+		if !active {
+			provider.Invalidate(installationID)
+			return "", errors.New("GitHub installation is unavailable")
+		}
+	}
 	installationLock := provider.installationLock(installationID)
 	installationLock.Lock()
 	defer installationLock.Unlock()
@@ -102,6 +117,12 @@ func (provider *InstallationTokenProviderV1) Token(ctx context.Context, installa
 	provider.cache[installationID] = cachedToken{value: result.Token, expiresAt: result.ExpiresAt}
 	provider.mu.Unlock()
 	return result.Token, nil
+}
+
+func (provider *InstallationTokenProviderV1) Invalidate(installationID int64) {
+	provider.mu.Lock()
+	delete(provider.cache, installationID)
+	provider.mu.Unlock()
 }
 
 func (provider *InstallationTokenProviderV1) installationLock(installationID int64) *sync.Mutex {

@@ -23,6 +23,11 @@ export class TemporalRepairWorkflowGatewayV1 extends RepairWorkflowGateway {
         args: [command],
         workflowId,
         taskQueue: this.settings.taskQueue,
+        // A repair run is a business-level idempotency key. Never allow a
+        // completed execution to be replaced by a second execution with the
+        // same workflow id; the catch below resolves both active and closed
+        // duplicate-start responses to the original execution.
+        workflowIdReusePolicy: "REJECT_DUPLICATE",
       });
       return { workflowId, runId: handle.firstExecutionRunId, status: "RUNNING" };
     } catch (error) {

@@ -16,6 +16,11 @@ type IncidentReader interface {
 	Get(context.Context, string) (domain.Incident, error)
 	List(context.Context, ListIncidentsRequest) (domain.IncidentPage, error)
 	ListOccurrences(context.Context, string, int) ([]domain.IncidentOccurrence, error)
+	ListOccurrencePage(context.Context, string, int, string) (domain.IncidentOccurrencePage, error)
+}
+
+type IncidentActionReader interface {
+	AllowedActions(context.Context, string) (domain.IncidentActions, error)
 }
 
 type IncidentStatusManager interface {
@@ -39,6 +44,7 @@ type IncidentFinder interface {
 	FindByID(context.Context, string) (domain.Incident, error)
 	ListIncidents(context.Context, domain.IncidentListQuery) ([]domain.Incident, error)
 	ListOccurrences(context.Context, string, int) ([]domain.IncidentOccurrence, error)
+	ListOccurrencePage(context.Context, domain.IncidentOccurrenceQuery) ([]domain.IncidentOccurrence, error)
 }
 
 type IncidentStatusWriter interface {
@@ -60,6 +66,7 @@ type ReadinessProbe interface {
 type IncidentStatusPolicy interface {
 	Validate(string) error
 	ValidateTransition(current, next string) error
+	AllowedTransitions(current string) []string
 }
 
 type RequestAuthenticator interface {

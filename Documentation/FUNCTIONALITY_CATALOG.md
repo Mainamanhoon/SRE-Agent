@@ -20,6 +20,7 @@ GitHub, and Kubernetes-cluster acceptance still depends on deployment credential
 
 | Workstream | Current state | What is available now | Main remaining work |
 | --- | --- | --- | --- |
+| CI and release evidence | Implemented | Pull-request language checks, PostgreSQL migration replay, strict manifests/collector validation, secret scan, image SBOM/provenance, vulnerability scan, and immutable release digests | First GitHub Actions run and tag-based GHCR publication |
 | Repository and service foundation | Verified | Monorepo, shared commands, independently deployable services, Dockerfiles, Compose, clean architecture boundaries, and Kubernetes core-service manifests | CI/CD and environment-specific ingress/network/secret overlays |
 | Incident detection and storage | Verified | Candidate validation, normalization, fingerprinting, authenticated durable handoff, bounded retry, PostgreSQL persistence, deduplication, and incident reads | Run target-environment database integration and capacity tests |
 | Durable orchestration | Verified | Complete Temporal diagnose/plan/sandbox/verify/deliver state machine, incident transitions, retry policy, idempotent run IDs, health endpoints, and cleanup | Add a durable repair-run projection optimized for UI queries |
@@ -145,6 +146,20 @@ retryable, and persist a result reference rather than large raw evidence.
 
 ## Implementation journal
 
+### 2026-09-24 — CI and release evidence
+
+- Implemented: Added .github/workflows/ci.yml with JavaScript/TypeScript lint, typecheck, tests,
+  builds; independent Go module format/vet/test jobs; PostgreSQL migration replay and integration
+  test; Compose, Kubernetes, and OTel validation; Gitleaks; and a build/scan matrix for all eleven
+  current images.
+- Release evidence: Version tags publish commit-SHA images to GHCR with BuildKit SBOM/provenance,
+  CRITICAL/HIGH vulnerability checks, per-image digest artifacts, and a summary that identifies
+  migration execution as a deployment gate.
+- Verified locally: actionlint 1.7.7, docker compose config --quiet, strict kubeconform 0.6.7
+  against 31 resources, OTel Collector 0.160.0 config validation, and git diff --check passed.
+- Still pending: The workflow has not yet run in GitHub Actions; GHCR publication and registry
+  permissions require a version tag and GitHub-hosted workflow execution.
+
 ### 2026-09-24 — Remaining backend production path
 
 - Expanded incident storage with immutable occurrence history, keyset pagination/filtering,
@@ -269,3 +284,67 @@ retryable, and persist a result reference rather than large raw evidence.
 - Attempted the remaining environment checks: Docker Desktop was started but its daemon did not
   become available; Node remains 22.12; and the Gemini credential is not present in the command
   process environment. These checks remain environment-blocked rather than code-blocked.
+
+### 2026-09-24 - Luna handoff milestone completion checkpoint
+
+- Added the production frontend console: incident queue filters/pagination, occurrence and action
+  views, bounded repair-start dialog, repair-run event timeline, same-origin proxy, and tests.
+- Added incident occurrence keyset pagination and centralized status-transition policy.
+- Added signed GitHub webhook durability: deduplication, leases, retries, dead letters, installation
+  state, commit-trailer identity verification, and outcome reconciliation.
+- Added durable repair-run projection with migrations, idempotent events, optimistic updates, keyset
+  reads, HTTP adapters, and controlled-time Temporal integration.
+- Added conservative eligibility, protected-path/size policy, risk scoring, explicit human approval
+  for risky delivery, and a no-auto-merge guarantee.
+- Added commit-pinned secure source archive acquisition with traversal/link/size/file-count controls,
+  read-only workspace handling, bounded filesystem artifact/result persistence, an OpenAI-compatible
+  harness adapter, explicit benchmark fixture/runner, Grafana dashboard, Prometheus alerts, and the
+  k6 100k-request/minute acceptance profile.
+- Live provider credentials, GitHub App, managed PostgreSQL/object storage, Temporal, Kubernetes/
+  registry, alert history, and sustained load proof remain target-environment acceptance gates.
+
+### 2026-09-24 - Local Compose acceptance and migration replay
+
+- Fixed the incident-service deployment gap by adding `Dockerfile.migrate` and an explicit
+  `incident-migrations` Compose service. This is required for existing PostgreSQL volumes because
+  Docker's `/docker-entrypoint-initdb.d` scripts run only on first database initialization.
+- Replayed both incident migrations against the running local PostgreSQL instance and verified the
+  previously missing `incident_occurrences` table was created.
+- Built and started the local PostgreSQL, migration, incident detector, incident service,
+  repair-run service, control API, telemetry dependencies, Temporal, and frontend containers.
+- Verified local readiness (`GET /api/v1/health/ready` returned 200), service health endpoints,
+  frontend delivery, candidate acceptance, incident deduplication (same incident ID on retry),
+  occurrence pagination, and lifecycle action projection.
+- Remaining live acceptance still requires the target GitHub/model/Kubernetes/object-storage
+  environment; local Compose does not prove production SLOs or gVisor scheduling.
+- Built every Compose profile image (`agent`, `kubernetes`, and `github`) successfully, including
+  the agent runner, repair worker, sandbox controller, GitHub App, and all migration images.
+- Validated both Kubernetes manifests with kubeconform (39 resources valid) and validated the OTel
+  Collector configuration with the pinned collector image.
+- Ran the agent runner container with an explicitly selected fake harness only for local smoke;
+  authenticated capabilities and all tool routes responded successfully. This fake mode was not
+  used for benchmarking and remains forbidden by production configuration.
+
+### 2026-09-25 - Product readiness verification
+
+- Repository gates passed after the final Temporal idempotency fix: Biome lint, TypeScript
+  typecheck, all JavaScript/TypeScript tests (57 passing, one intentionally skipped Temporal
+  integration test), all package builds, and `git diff --check`.
+- Go modules passed with the pinned Go 1.27.1 container: `gofmt`, `go vet ./...`, and uncached
+  `go test ./...` for GitHub App, incident detector, incident service, repair-run service,
+  sandbox controller, and sandbox executor.
+- Compose configuration and all `agent`, `kubernetes`, and `github` profile images validated;
+  both Kubernetes manifests passed strict kubeconform validation (39/39 resources) and the
+  pinned OTel Collector configuration validator passed.
+- Local Compose runtime passed readiness and health checks for PostgreSQL/migrations, incident
+  detector, incident service, repair-run service, control API, Temporal, agent runner, frontend,
+  and OTel Collector. Authentication success and rejection paths were verified for agent tools.
+- End-to-end local checks passed for candidate ingestion, incident deduplication and occurrence
+  replay, action projection, repair-run event idempotency, and workflow start/describe.
+- Found and fixed a production-relevant Temporal edge case: a retry after a completed workflow
+  could start a second execution under the same business repair ID. `REJECT_DUPLICATE` is now
+  configured and live Compose checks confirm both active and completed retries return the original
+  workflow/run identity.
+- This is local readiness evidence, not production certification. Live GitHub/model credentials,
+  managed dependencies, Kubernetes/gVisor, object-storage restart tests, and sustained 100k
+  requests/minute SLO evidence remain external acceptance gates.

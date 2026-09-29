@@ -29,6 +29,12 @@ func (service *stubIncidentService) List(context.Context, application.ListIncide
 func (service *stubIncidentService) ListOccurrences(context.Context, string, int) ([]domain.IncidentOccurrence, error) {
 	return []domain.IncidentOccurrence{}, nil
 }
+func (service *stubIncidentService) ListOccurrencePage(context.Context, string, int, string) (domain.IncidentOccurrencePage, error) {
+	return domain.IncidentOccurrencePage{Items: []domain.IncidentOccurrence{}}, nil
+}
+func (service *stubIncidentService) AllowedActions(_ context.Context, incidentID string) (domain.IncidentActions, error) {
+	return domain.IncidentActions{IncidentID: incidentID, CurrentStatus: service.incident.Status, AllowedActions: []string{"investigating"}}, nil
+}
 func (service *stubIncidentService) UpdateStatus(_ context.Context, _ string, status string) (domain.Incident, error) {
 	service.incident.Status = status
 	return service.incident, nil
@@ -57,6 +63,21 @@ func TestGetIncident(t *testing.T) {
 	}
 }
 
+func TestOccurrenceTimelineIsPaginatedAndActionsAreServerOwned(t *testing.T) {
+	service := &stubIncidentService{incident: domain.Incident{ID: testIncidentID, Status: "open"}}
+	handler := testHandler(service, true, true)
+	occurrences := httptest.NewRecorder()
+	handler.ServeHTTP(occurrences, httptest.NewRequest(http.MethodGet, "/api/v1/incidents/"+testIncidentID+"/occurrences?limit=10&cursor=next-page", nil))
+	if occurrences.Code != http.StatusOK || !strings.Contains(occurrences.Body.String(), `"items":[]`) {
+		t.Fatalf("unexpected occurrence response: %d %s", occurrences.Code, occurrences.Body.String())
+	}
+	actions := httptest.NewRecorder()
+	handler.ServeHTTP(actions, httptest.NewRequest(http.MethodGet, "/api/v1/incidents/"+testIncidentID+"/actions", nil))
+	if actions.Code != http.StatusOK || !strings.Contains(actions.Body.String(), `"allowedActions":["investigating"]`) {
+		t.Fatalf("unexpected allowed-actions response: %d %s", actions.Code, actions.Body.String())
+	}
+}
+
 func TestAuthenticationAndRateLimit(t *testing.T) {
 	service := &stubIncidentService{}
 	response := httptest.NewRecorder()
@@ -82,5 +103,5 @@ func TestUpdateStatus(t *testing.T) {
 }
 
 func testHandler(service *stubIncidentService, authenticated, admitted bool) http.Handler {
-	return NewHandler(HandlerDependencies{Recorder: service, Reader: service, Statuses: service, Readiness: &stubReadiness{}, Authenticator: stubAuth(authenticated), Limiter: stubLimiter(admitted), Metrics: &metrics.IncidentMetricsV1{}, ServiceVersion: "test", BodyLimitBytes: 1 << 20, ReadinessTimeout: time.Second})
+	return NewHandler(HandlerDependencies{Recorder: service, Reader: service, Actions: service, Statuses: service, Readiness: &stubReadiness{}, Authenticator: stubAuth(authenticated), Limiter: stubLimiter(admitted), Metrics: &metrics.IncidentMetricsV1{}, ServiceVersion: "test", BodyLimitBytes: 1 << 20, ReadinessTimeout: time.Second})
 }

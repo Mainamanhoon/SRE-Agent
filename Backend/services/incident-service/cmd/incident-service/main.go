@@ -46,7 +46,7 @@ func main() {
 	server := &http.Server{
 		Addr: settings.HTTPAddress,
 		Handler: api.NewHandler(api.HandlerDependencies{
-			Recorder: incidentService, Reader: incidentService, Statuses: incidentService, Readiness: repository,
+			Recorder: incidentService, Reader: incidentService, Actions: incidentService, Statuses: incidentService, Readiness: repository,
 			Authenticator: security.NewBearerAuthenticatorV1(settings.APIAuthEnabled, settings.APIAuthToken),
 			Limiter:       admission.NewTokenBucketV1(settings.RequestsPerSecond, settings.RequestBurst), Metrics: &metrics.IncidentMetricsV1{},
 			ServiceVersion: settings.ServiceVersion, BodyLimitBytes: settings.BodyLimitBytes, ReadinessTimeout: settings.ReadinessTimeout,

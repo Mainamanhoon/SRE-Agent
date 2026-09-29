@@ -8,6 +8,7 @@ const environmentSchema = z.object({
   SERVICE_VERSION: z.string().min(1).default("local"),
   WORKER_HTTP_PORT: z.coerce.number().int().positive().max(65_535).default(4060),
   INCIDENT_SERVICE_URL: z.string().url().default("http://localhost:4020"),
+  REPAIR_RUN_SERVICE_URL: z.string().url().default("http://localhost:4070"),
   AGENT_RUNNER_URL: z.string().url().default("http://localhost:4040"),
   SANDBOX_CONTROLLER_URL: z.string().url().default("http://localhost:4030"),
   GITHUB_APP_URL: z.string().url().default("http://localhost:4050"),

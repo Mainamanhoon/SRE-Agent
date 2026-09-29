@@ -15,6 +15,75 @@ spec:
               valueFrom: { secretKeyRef: { name: sre-agent-database, key: url } }
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
 ---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: repair-run-migrations }
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: registry.example/sre-agent/repair-run-service-migrate:REPLACE_ME
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: sre-agent-database, key: url } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: repair-run-service }
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: repair-run-service }
+  template:
+    metadata:
+      labels: { app: repair-run-service }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "4070", prometheus.io/path: /metrics }
+    spec:
+      securityContext: { runAsNonRoot: true }
+      containers:
+        - name: repair-run-service
+          image: registry.example/sre-agent/repair-run-service:REPLACE_ME
+          ports: [{ name: http, containerPort: 4070 }]
+          env:
+            - { name: HTTP_ADDRESS, value: ":4070" }
+            - { name: APP_ENV, value: production }
+            - { name: API_AUTH_ENABLED, value: "true" }
+            - { name: DATABASE_MAX_CONNECTIONS, value: "50" }
+            - { name: REQUESTS_PER_SECOND, value: "2000" }
+            - { name: REQUEST_BURST, value: "4000" }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: sre-agent-database, key: url } }
+            - name: API_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
+          resources: { requests: { cpu: 250m, memory: 128Mi }, limits: { cpu: "2", memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /ready, port: http }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: http }, periodSeconds: 10 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: repair-run-service }
+spec: { selector: { app: repair-run-service }, ports: [{ name: http, port: 4070, targetPort: http }] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: repair-run-service }
+spec: { minAvailable: 2, selector: { matchLabels: { app: repair-run-service } } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: repair-run-service }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: repair-run-service }
+  minReplicas: 3
+  maxReplicas: 30
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } } }]
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: incident-service }
@@ -85,6 +154,7 @@ spec:
             - { name: TEMPORAL_NAMESPACE, value: default }
             - { name: TEMPORAL_TASK_QUEUE, value: repair-workflows }
             - { name: INCIDENT_SERVICE_URL, value: http://incident-service:4020 }
+            - { name: REPAIR_RUN_SERVICE_URL, value: http://repair-run-service:4070 }
             - { name: AGENT_RUNNER_URL, value: http://agent-runner:4040 }
             - { name: SANDBOX_CONTROLLER_URL, value: http://sandbox-controller.sre-agent-sandboxes:4030 }
             - { name: GITHUB_APP_URL, value: http://github-app:4050 }
@@ -110,6 +180,25 @@ spec:
   maxReplicas: 30
   metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } } }]
 ---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: github-app-migrations }
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext: { runAsNonRoot: true, runAsUser: 999, runAsGroup: 999 }
+      containers:
+        - name: migrate
+          image: registry.example/sre-agent/github-app-migrate:REPLACE_ME
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: sre-agent-database, key: url } }
+          resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { cpu: 250m, memory: 256Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: github-app }
@@ -129,6 +218,10 @@ spec:
           env:
             - { name: APP_ENV, value: production }
             - { name: API_AUTH_ENABLED, value: "true" }
+            - { name: REPAIR_RUN_SERVICE_URL, value: http://repair-run-service:4070 }
+            - { name: INCIDENT_SERVICE_URL, value: http://incident-service:4020 }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: sre-agent-database, key: url } }
             - name: API_AUTH_TOKEN
               valueFrom: { secretKeyRef: { name: sre-agent-service-auth, key: internal-service-token } }
             - name: GITHUB_APP_ID
@@ -160,6 +253,32 @@ spec:
   minReplicas: 3
   maxReplicas: 30
   metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: frontend }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: frontend } }
+  template:
+    metadata: { labels: { app: frontend } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 101, runAsGroup: 101 }
+      containers:
+        - name: frontend
+          image: registry.example/sre-agent/frontend:REPLACE_ME
+          ports: [{ name: http, containerPort: 8080 }]
+          resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { cpu: 500m, memory: 256Mi } }
+          readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: { sizeLimit: 32Mi } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: frontend }
+spec: { selector: { app: frontend }, ports: [{ name: http, port: 80, targetPort: http }] }
 ---
 apiVersion: apps/v1
 kind: Deployment

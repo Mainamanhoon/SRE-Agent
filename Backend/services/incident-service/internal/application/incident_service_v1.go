@@ -15,6 +15,7 @@ import (
 var (
 	_ IncidentRecorder      = (*IncidentServiceV1)(nil)
 	_ IncidentReader        = (*IncidentServiceV1)(nil)
+	_ IncidentActionReader  = (*IncidentServiceV1)(nil)
 	_ IncidentStatusManager = (*IncidentServiceV1)(nil)
 
 	ErrInvalidIncident   = errors.New("fingerprint, service, and environment are required")
@@ -96,6 +97,51 @@ func (service *IncidentServiceV1) ListOccurrences(ctx context.Context, incidentI
 	return service.repository.ListOccurrences(ctx, incidentID, limit)
 }
 
+func (service *IncidentServiceV1) ListOccurrencePage(ctx context.Context, incidentID string, limit int, cursor string) (domain.IncidentOccurrencePage, error) {
+	if !validIncidentID(incidentID) {
+		return domain.IncidentOccurrencePage{}, ErrInvalidIncidentID
+	}
+	if limit == 0 {
+		limit = 50
+	}
+	if limit < 1 || limit > 100 {
+		return domain.IncidentOccurrencePage{}, ErrInvalidListQuery
+	}
+	query := domain.IncidentOccurrenceQuery{IncidentID: incidentID, Limit: limit + 1}
+	if cursor != "" {
+		observedAt, occurrenceID, err := decodeOccurrenceCursor(cursor)
+		if err != nil {
+			return domain.IncidentOccurrencePage{}, errors.Join(ErrInvalidListQuery, err)
+		}
+		query.BeforeObservedAt, query.BeforeID = observedAt, occurrenceID
+	}
+	items, err := service.repository.ListOccurrencePage(ctx, query)
+	if err != nil {
+		return domain.IncidentOccurrencePage{}, err
+	}
+	page := domain.IncidentOccurrencePage{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		last := page.Items[len(page.Items)-1]
+		page.NextCursor = encodeOccurrenceCursor(last.ObservedAt, last.ID)
+	}
+	return page, nil
+}
+
+func (service *IncidentServiceV1) AllowedActions(ctx context.Context, incidentID string) (domain.IncidentActions, error) {
+	if !validIncidentID(incidentID) {
+		return domain.IncidentActions{}, ErrInvalidIncidentID
+	}
+	incident, err := service.repository.FindByID(ctx, incidentID)
+	if err != nil {
+		return domain.IncidentActions{}, err
+	}
+	return domain.IncidentActions{
+		IncidentID: incident.ID, CurrentStatus: incident.Status,
+		AllowedActions: service.statusPolicy.AllowedTransitions(incident.Status),
+	}, nil
+}
+
 func (service *IncidentServiceV1) UpdateStatus(ctx context.Context, incidentID, next string) (domain.Incident, error) {
 	if !validIncidentID(incidentID) {
 		return domain.Incident{}, ErrInvalidIncidentID
@@ -147,4 +193,26 @@ func decodeCursor(cursor string) (time.Time, string, error) {
 		return time.Time{}, "", errors.New("invalid cursor timestamp")
 	}
 	return time.Unix(0, nanoseconds).UTC(), parts[1], nil
+}
+
+func encodeOccurrenceCursor(observedAt time.Time, occurrenceID int64) string {
+	value := strconv.FormatInt(observedAt.UTC().UnixNano(), 10) + ":" + strconv.FormatInt(occurrenceID, 10)
+	return base64.RawURLEncoding.EncodeToString([]byte(value))
+}
+
+func decodeOccurrenceCursor(cursor string) (time.Time, int64, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return time.Time{}, 0, fmt.Errorf("decode occurrence cursor: %w", err)
+	}
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return time.Time{}, 0, errors.New("invalid occurrence cursor")
+	}
+	nanoseconds, timeErr := strconv.ParseInt(parts[0], 10, 64)
+	occurrenceID, idErr := strconv.ParseInt(parts[1], 10, 64)
+	if timeErr != nil || idErr != nil || occurrenceID < 1 {
+		return time.Time{}, 0, errors.New("invalid occurrence cursor values")
+	}
+	return time.Unix(0, nanoseconds).UTC(), occurrenceID, nil
 }

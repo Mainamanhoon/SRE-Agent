@@ -1,3 +1,6 @@
 FROM postgres:17-alpine
+
 COPY migrations /migrations
-CMD ["sh", "-c", "for file in /migrations/*.sql; do psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$file\"; done"]
+
+ENTRYPOINT ["/bin/sh", "-ec"]
+CMD ["for migration in /migrations/*.sql; do echo Applying $migration; psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$migration\"; done"]

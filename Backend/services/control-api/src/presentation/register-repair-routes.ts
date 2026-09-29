@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import type { RepairRunProjectionGateway } from "../application/contracts/repair-run-projection-gateway.js";
 import type { RepairWorkflowGateway } from "../application/contracts/repair-workflow-gateway.js";
 
 const evidence = z.object({
@@ -33,12 +34,17 @@ const startRepair = z.object({
   evidence: z.array(evidence).max(500).default([]),
 });
 
-export function registerRepairRoutes(app: FastifyInstance, workflows: RepairWorkflowGateway): void {
+export function registerRepairRoutes(
+  app: FastifyInstance,
+  workflows: RepairWorkflowGateway,
+  repairRuns: RepairRunProjectionGateway,
+): void {
   app.post("/api/v1/repairs", async (request, reply) => {
     const parsed = startRepair.safeParse(request.body);
     if (!parsed.success)
       return reply.code(400).send({ code: "INVALID_REPAIR_REQUEST", issues: parsed.error.issues });
     try {
+      await repairRuns.create(parsed.data);
       return reply.code(202).send(await workflows.start(parsed.data));
     } catch {
       return reply.code(503).send({ code: "WORKFLOW_UNAVAILABLE" });

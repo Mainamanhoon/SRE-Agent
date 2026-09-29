@@ -8,6 +8,15 @@ import type {
 import type { IncidentTriagePolicy } from "../contracts/incident-triage-policy.js";
 import { RepairActivities } from "../contracts/repair-activities.js";
 import type { RepairPlanParser } from "../contracts/repair-plan-parser.js";
+import type {
+  DeliveryApprovalPolicy,
+  PolicyDecision,
+  RepairChangePolicy,
+} from "../contracts/repair-policy.js";
+import type {
+  RepairRunEventInput,
+  RepairRunProjectionGateway,
+} from "../contracts/repair-run-projection-gateway.js";
 import type { RepairServiceGateway } from "../contracts/repair-service-gateway.js";
 
 export class RepairActivitiesV1 extends RepairActivities {
@@ -15,8 +24,17 @@ export class RepairActivitiesV1 extends RepairActivities {
     private readonly triagePolicy: IncidentTriagePolicy,
     private readonly gateway: RepairServiceGateway,
     private readonly plans: RepairPlanParser,
+    private readonly repairRuns: RepairRunProjectionGateway,
+    private readonly changePolicy: RepairChangePolicy,
+    private readonly deliveryPolicy: DeliveryApprovalPolicy,
   ) {
     super();
+  }
+  public override createRepairRun(input: RepairWorkflowInput): Promise<void> {
+    return this.repairRuns.create(input);
+  }
+  public override recordRepairRunEvent(input: RepairRunEventInput): Promise<void> {
+    return this.repairRuns.appendEvent(input);
   }
   public override triageIncident(input: RepairWorkflowInput): Promise<TriageResult> {
     return this.triagePolicy.evaluate(input);
@@ -31,7 +49,22 @@ export class RepairActivitiesV1 extends RepairActivities {
     input: RepairWorkflowInput,
     diagnosis: DiagnosisResult,
   ): Promise<RepairPlan> {
-    return this.plans.parse(input, diagnosis);
+    const plan = this.plans.parse(input, diagnosis);
+    const policy = await this.changePolicy.evaluate(input, plan);
+    if (!policy.allowed)
+      return {
+        decision: "abstain",
+        summary: `${policy.reasonCode}: ${policy.summary}`,
+        changes: [],
+      };
+    return plan;
+  }
+  public override async evaluateDeliveryApproval(
+    input: RepairWorkflowInput,
+    plan: RepairPlan,
+  ): Promise<PolicyDecision> {
+    const riskScore = await this.changePolicy.evaluate(input, plan);
+    return this.deliveryPolicy.evaluate(input, plan, riskScore.riskScore);
   }
   public override createSandbox(input: RepairWorkflowInput, plan: RepairPlan) {
     return this.gateway.createSandbox(input, plan);

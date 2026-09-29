@@ -1,0 +1,15 @@
+{
+  "name": "exception-basic",
+  "request": {
+    "repairRunId": "benchmark-exception-basic",
+    "incident": {
+      "id": "incident-1",
+      "serviceName": "checkout",
+      "environment": "production",
+      "exceptionType": "TypeError",
+      "exceptionMessage": "cannot read properties of undefined"
+    },
+    "evidence": [{ "id": "log-1", "kind": "log", "summary": "checkout failed while reading cart" }]
+  },
+  "expected": { "mustMention": ["checkout"], "mustNotContain": ["apply this patch automatically"] }
+}

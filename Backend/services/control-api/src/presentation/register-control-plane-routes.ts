@@ -26,6 +26,13 @@ const diagnosisSchema = z.object({
   evidence: z.array(z.record(z.string(), z.unknown())).max(500).default([]),
 });
 
+const incidentListSchema = z.object({
+  status: z.string().min(1).max(40).optional(),
+  service: z.string().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().max(512).optional(),
+});
+
 export function registerControlPlaneRoutes(
   app: FastifyInstance,
   gateway: ControlPlaneGateway,
@@ -68,6 +75,19 @@ export function registerControlPlaneRoutes(
     }
   });
 
+  app.get("/api/v1/incidents", async (request, reply) => {
+    const parsed = incidentListSchema.safeParse(request.query);
+    if (!parsed.success) return invalidRequest(reply, parsed.error.issues);
+    const cancellation = replyCancellation(reply);
+    try {
+      return reply.code(200).send(await gateway.listIncidents(parsed.data, cancellation.signal));
+    } catch (error) {
+      return downstreamFailure(reply, error);
+    } finally {
+      cancellation.dispose();
+    }
+  });
+
   app.post("/api/v1/incidents/candidates", async (request, reply) => {
     const parsed = candidateSchema.safeParse(request.body);
     if (!parsed.success) return invalidRequest(reply, parsed.error.issues);
@@ -89,6 +109,72 @@ export function registerControlPlaneRoutes(
       return reply
         .code(200)
         .send(await gateway.getIncident(parsed.data.incidentId, cancellation.signal));
+    } catch (error) {
+      return downstreamFailure(reply, error);
+    } finally {
+      cancellation.dispose();
+    }
+  });
+
+  app.get("/api/v1/incidents/:incidentId/occurrences", async (request, reply) => {
+    const params = z.object({ incidentId: z.string().uuid() }).safeParse(request.params);
+    const query = z
+      .object({
+        limit: z.coerce.number().int().min(1).max(100).default(50),
+        cursor: z.string().max(512).optional(),
+      })
+      .safeParse(request.query);
+    if (!params.success || !query.success) return invalidRequest(reply, "invalid occurrence query");
+    const cancellation = replyCancellation(reply);
+    try {
+      return reply
+        .code(200)
+        .send(
+          await gateway.listIncidentOccurrences(
+            params.data.incidentId,
+            query.data.limit,
+            query.data.cursor,
+            cancellation.signal,
+          ),
+        );
+    } catch (error) {
+      return downstreamFailure(reply, error);
+    } finally {
+      cancellation.dispose();
+    }
+  });
+
+  app.get("/api/v1/incidents/:incidentId/actions", async (request, reply) => {
+    const parsed = z.object({ incidentId: z.string().uuid() }).safeParse(request.params);
+    if (!parsed.success) return invalidRequest(reply, parsed.error.issues);
+    const cancellation = replyCancellation(reply);
+    try {
+      return reply
+        .code(200)
+        .send(await gateway.getIncidentActions(parsed.data.incidentId, cancellation.signal));
+    } catch (error) {
+      return downstreamFailure(reply, error);
+    } finally {
+      cancellation.dispose();
+    }
+  });
+
+  app.patch("/api/v1/incidents/:incidentId/status", async (request, reply) => {
+    const params = z.object({ incidentId: z.string().uuid() }).safeParse(request.params);
+    const body = z.object({ status: z.string().min(1).max(40) }).safeParse(request.body);
+    if (!params.success || !body.success)
+      return invalidRequest(reply, "invalid incident status update");
+    const cancellation = replyCancellation(reply);
+    try {
+      return reply
+        .code(200)
+        .send(
+          await gateway.updateIncidentStatus(
+            params.data.incidentId,
+            body.data.status,
+            cancellation.signal,
+          ),
+        );
     } catch (error) {
       return downstreamFailure(reply, error);
     } finally {

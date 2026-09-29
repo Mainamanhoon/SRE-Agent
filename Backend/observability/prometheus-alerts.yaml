@@ -1,0 +1,25 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sre-agent-alerts
+  labels:
+    app.kubernetes.io/name: sre-agent
+spec:
+  groups:
+    - name: sre-agent
+      rules:
+        - alert: SREAgentWebhookDeadLetters
+          expr: increase(sre_github_webhook_deliveries_total{outcome="dead"}[10m]) > 0
+          for: 5m
+          labels: { severity: critical }
+          annotations: { summary: "GitHub webhook deliveries are dead-lettered" }
+        - alert: SREAgentRepairProjectionLag
+          expr: sre_repair_projection_lag_seconds > 60
+          for: 10m
+          labels: { severity: warning }
+          annotations: { summary: "Repair projection reconciliation is lagging" }
+        - alert: SREAgentDiagnosisErrors
+          expr: sum(rate(sre_agent_diagnosis_total{outcome="error"}[5m])) > 0
+          for: 10m
+          labels: { severity: warning }
+          annotations: { summary: "Agent diagnosis errors detected" }

@@ -19,6 +19,7 @@ import (
 type HandlerDependencies struct {
 	Recorder         application.IncidentRecorder
 	Reader           application.IncidentReader
+	Actions          application.IncidentActionReader
 	Statuses         application.IncidentStatusManager
 	Readiness        application.ReadinessProbe
 	Authenticator    application.RequestAuthenticator
@@ -52,6 +53,9 @@ func NewHandler(dependencies HandlerDependencies) http.Handler {
 	mux.HandleFunc("GET /api/v1/incidents/{incidentID}", func(writer http.ResponseWriter, request *http.Request) { handleGet(dependencies, writer, request) })
 	mux.HandleFunc("GET /api/v1/incidents/{incidentID}/occurrences", func(writer http.ResponseWriter, request *http.Request) {
 		handleOccurrences(dependencies, writer, request)
+	})
+	mux.HandleFunc("GET /api/v1/incidents/{incidentID}/actions", func(writer http.ResponseWriter, request *http.Request) {
+		handleActions(dependencies, writer, request)
 	})
 	mux.HandleFunc("PATCH /api/v1/incidents/{incidentID}/status", func(writer http.ResponseWriter, request *http.Request) { handleStatus(dependencies, writer, request) })
 	return recoverPanic(securityHeaders(authenticate(rateLimit(mux, dependencies.Limiter, dependencies.Metrics), dependencies.Authenticator)))
@@ -116,7 +120,7 @@ func handleOccurrences(dependencies HandlerDependencies, writer http.ResponseWri
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid occurrence query"})
 		return
 	}
-	items, err := dependencies.Reader.ListOccurrences(request.Context(), request.PathValue("incidentID"), limit)
+	page, err := dependencies.Reader.ListOccurrencePage(request.Context(), request.PathValue("incidentID"), limit, request.URL.Query().Get("cursor"))
 	if errors.Is(err, application.ErrInvalidIncidentID) || errors.Is(err, application.ErrInvalidListQuery) {
 		dependencies.Metrics.Observe("rejected")
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid occurrence query"})
@@ -128,7 +132,25 @@ func handleOccurrences(dependencies HandlerDependencies, writer http.ResponseWri
 		return
 	}
 	dependencies.Metrics.Observe("read")
-	writeJSON(writer, http.StatusOK, map[string]any{"items": items})
+	writeJSON(writer, http.StatusOK, page)
+}
+
+func handleActions(dependencies HandlerDependencies, writer http.ResponseWriter, request *http.Request) {
+	actions, err := dependencies.Actions.AllowedActions(request.Context(), request.PathValue("incidentID"))
+	if errors.Is(err, application.ErrInvalidIncidentID) {
+		writeJSON(writer, http.StatusUnprocessableEntity, map[string]string{"error": "invalid incident id"})
+		return
+	}
+	if errors.Is(err, application.ErrIncidentNotFound) {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "incident not found"})
+		return
+	}
+	if err != nil {
+		dependencies.Metrics.Observe("failed")
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "incident actions unavailable"})
+		return
+	}
+	writeJSON(writer, http.StatusOK, actions)
 }
 
 func handleStatus(dependencies HandlerDependencies, writer http.ResponseWriter, request *http.Request) {

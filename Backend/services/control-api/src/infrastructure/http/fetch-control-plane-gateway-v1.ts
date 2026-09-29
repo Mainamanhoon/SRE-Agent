@@ -1,5 +1,6 @@
 import {
   ControlPlaneGateway,
+  type IncidentListQuery,
   type StartDiagnosisCommand,
   type SubmitCandidateCommand,
 } from "../../application/contracts/control-plane-gateway.js";
@@ -49,6 +50,54 @@ export class FetchControlPlaneGatewayV1 extends ControlPlaneGateway {
     );
   }
 
+  public override listIncidents(query: IncidentListQuery, signal?: AbortSignal) {
+    const url = new URL("/api/v1/incidents", this.settings.incidentServiceUrl);
+    if (query.status) url.searchParams.set("status", query.status);
+    if (query.service) url.searchParams.set("service", query.service);
+    if (query.limit) url.searchParams.set("limit", String(query.limit));
+    if (query.cursor) url.searchParams.set("cursor", query.cursor);
+    return this.request("GET", url, undefined, signal);
+  }
+
+  public override listIncidentOccurrences(
+    incidentId: string,
+    limit: number,
+    cursor?: string,
+    signal?: AbortSignal,
+  ) {
+    const url = new URL(
+      `/api/v1/incidents/${encodeURIComponent(incidentId)}/occurrences`,
+      this.settings.incidentServiceUrl,
+    );
+    url.searchParams.set("limit", String(limit));
+    if (cursor) url.searchParams.set("cursor", cursor);
+    return this.request("GET", url, undefined, signal);
+  }
+
+  public override getIncidentActions(incidentId: string, signal?: AbortSignal) {
+    return this.request(
+      "GET",
+      new URL(
+        `/api/v1/incidents/${encodeURIComponent(incidentId)}/actions`,
+        this.settings.incidentServiceUrl,
+      ),
+      undefined,
+      signal,
+    );
+  }
+
+  public override updateIncidentStatus(incidentId: string, status: string, signal?: AbortSignal) {
+    return this.request(
+      "PATCH",
+      new URL(
+        `/api/v1/incidents/${encodeURIComponent(incidentId)}/status`,
+        this.settings.incidentServiceUrl,
+      ),
+      { status },
+      signal,
+    );
+  }
+
   public override startDiagnosis(command: StartDiagnosisCommand, signal?: AbortSignal) {
     return this.request(
       "POST",
@@ -58,7 +107,12 @@ export class FetchControlPlaneGatewayV1 extends ControlPlaneGateway {
     );
   }
 
-  private async request(method: "GET" | "POST", url: URL, body?: unknown, signal?: AbortSignal) {
+  private async request(
+    method: "GET" | "POST" | "PATCH",
+    url: URL,
+    body?: unknown,
+    signal?: AbortSignal,
+  ) {
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(new Error("downstream timeout")),

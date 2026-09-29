@@ -3,10 +3,15 @@ import { type AppDependencies, buildApp } from "../src/app.js";
 import { ControlApiQueryService } from "../src/application/contracts/control-api-query-service.js";
 import {
   ControlPlaneGateway,
+  type IncidentListQuery,
   type StartDiagnosisCommand,
   type SubmitCandidateCommand,
 } from "../src/application/contracts/control-plane-gateway.js";
 import { ControlPlaneReadinessProbe } from "../src/application/contracts/control-plane-readiness-probe.js";
+import {
+  type RepairRunListQuery,
+  RepairRunProjectionGateway,
+} from "../src/application/contracts/repair-run-projection-gateway.js";
 import {
   RepairWorkflowGateway,
   type StartRepairCommand,
@@ -39,12 +44,26 @@ class StubQueries extends ControlApiQueryService {
 }
 class StubGateway extends ControlPlaneGateway {
   public lastCandidate?: SubmitCandidateCommand;
+  public lastIncidentQuery?: IncidentListQuery;
   public async submitCandidate(command: SubmitCandidateCommand) {
     this.lastCandidate = command;
     return { fingerprint: "abc" };
   }
   public async getIncident(incidentId: string) {
     return { id: incidentId };
+  }
+  public async listIncidents(query: IncidentListQuery) {
+    this.lastIncidentQuery = query;
+    return { items: [], nextCursor: query.cursor };
+  }
+  public async listIncidentOccurrences(incidentId: string, _limit: number, cursor?: string) {
+    return { items: [], incidentId, nextCursor: cursor };
+  }
+  public async getIncidentActions(incidentId: string) {
+    return { incidentId, currentStatus: "open", allowedActions: ["investigating"] };
+  }
+  public async updateIncidentStatus(incidentId: string, status: string) {
+    return { id: incidentId, status };
   }
   public async startDiagnosis(command: StartDiagnosisCommand) {
     return { repairRunId: command.repairRunId };
@@ -87,6 +106,44 @@ class StubWorkflows extends RepairWorkflowGateway {
     return { workflowId: `repair-${repairRunId}`, status: "RUNNING" };
   }
 }
+class StubRepairRuns extends RepairRunProjectionGateway {
+  public created?: StartRepairCommand;
+  public async create(command: StartRepairCommand) {
+    this.created = command;
+    return {
+      id: command.repairRunId,
+      incidentId: command.incidentId,
+      repositoryOwner: command.repository.split("/")[0] ?? "",
+      repositoryName: command.repository.split("/")[1] ?? "",
+      expectedCommit: command.deployedCommit,
+      toolchain: command.toolchain,
+      status: "queued",
+      startedAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+      version: 1,
+    };
+  }
+  public async get(id: string) {
+    return {
+      id,
+      incidentId: "123e4567-e89b-12d3-a456-426614174000",
+      repositoryOwner: "acme",
+      repositoryName: "api",
+      expectedCommit: "abcdef1234567",
+      toolchain: "go" as const,
+      status: "queued",
+      startedAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+      version: 1,
+    };
+  }
+  public async list(_query: RepairRunListQuery) {
+    return { items: [] };
+  }
+  public async listEvents() {
+    return { items: [] };
+  }
+}
 
 function dependencies(allowed = true, ready = true, admitted = true): AppDependencies {
   return {
@@ -96,6 +153,7 @@ function dependencies(allowed = true, ready = true, admitted = true): AppDepende
     authenticator: new StubAuthenticator(allowed),
     rateLimiter: new StubRateLimiter(admitted),
     workflows: new StubWorkflows(),
+    repairRuns: new StubRepairRuns(),
   };
 }
 
@@ -153,6 +211,37 @@ describe("production boundaries", () => {
     expect((deps.gateway as StubGateway).lastCandidate?.service).toBe("checkout");
   });
 
+  it("exposes paginated incident, occurrence, and server-approved action facades", async () => {
+    const deps = dependencies();
+    const app = buildApp(loadConfig({ NODE_ENV: "test" }), deps);
+    openApps.push(app);
+    const queue = await app.inject({
+      method: "GET",
+      url: "/api/v1/incidents?status=open&service=checkout&limit=20&cursor=cursor-1",
+    });
+    expect(queue.statusCode).toBe(200);
+    expect((deps.gateway as StubGateway).lastIncidentQuery).toEqual({
+      status: "open",
+      service: "checkout",
+      limit: 20,
+      cursor: "cursor-1",
+    });
+
+    const occurrences = await app.inject({
+      method: "GET",
+      url: "/api/v1/incidents/123e4567-e89b-12d3-a456-426614174000/occurrences?limit=10&cursor=older",
+    });
+    expect(occurrences.statusCode).toBe(200);
+    expect(occurrences.json().nextCursor).toBe("older");
+
+    const actions = await app.inject({
+      method: "GET",
+      url: "/api/v1/incidents/123e4567-e89b-12d3-a456-426614174000/actions",
+    });
+    expect(actions.statusCode).toBe(200);
+    expect(actions.json().allowedActions).toEqual(["investigating"]);
+  });
+
   it("reports dependency readiness failures", async () => {
     const app = buildApp(loadConfig({ NODE_ENV: "test" }), dependencies(true, false));
     openApps.push(app);
@@ -189,6 +278,7 @@ describe("production boundaries", () => {
     expect(response.statusCode).toBe(202);
     expect(response.json().workflowId).toBe("repair-run-1");
     expect((deps.workflows as StubWorkflows).lastCommand?.repository).toBe("acme/api");
+    expect((deps.repairRuns as StubRepairRuns).created?.repairRunId).toBe("run-1");
   });
 
   it("rejects excess ingress before calling a downstream service", async () => {

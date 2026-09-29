@@ -20,6 +20,7 @@ spec:
             - { name: INCIDENT_DETECTOR_URL, value: http://incident-detector:4010 }
             - { name: INCIDENT_SERVICE_URL, value: http://incident-service:4020 }
             - { name: AGENT_RUNNER_URL, value: http://agent-runner:4040 }
+            - { name: REPAIR_RUN_SERVICE_URL, value: http://repair-run-service:4070 }
             - { name: AGENT_RUNNER_REQUIRED, value: "true" }
             - { name: TEMPORAL_ADDRESS, value: temporal:7233 }
             - { name: API_AUTH_ENABLED, value: "true" }

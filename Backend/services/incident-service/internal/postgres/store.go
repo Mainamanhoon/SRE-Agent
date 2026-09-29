@@ -109,6 +109,32 @@ FROM incident_occurrences WHERE incident_id = $1 ORDER BY observed_at DESC, id D
 	return items, rows.Err()
 }
 
+func (store *IncidentRepositoryV1) ListOccurrencePage(ctx context.Context, query domain.IncidentOccurrenceQuery) ([]domain.IncidentOccurrence, error) {
+	const statement = `SELECT id, incident_id::text, severity, COALESCE(trace_id, ''), COALESCE(error_summary, ''), observed_at
+FROM incident_occurrences WHERE incident_id=$1
+  AND ($2::timestamptz IS NULL OR (observed_at,id)<($2::timestamptz,$3))
+ORDER BY observed_at DESC,id DESC LIMIT $4`
+	var before any
+	var beforeID any
+	if !query.BeforeObservedAt.IsZero() {
+		before, beforeID = query.BeforeObservedAt, query.BeforeID
+	}
+	rows, err := store.pool.Query(ctx, statement, query.IncidentID, before, beforeID, query.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]domain.IncidentOccurrence, 0, query.Limit)
+	for rows.Next() {
+		var item domain.IncidentOccurrence
+		if err = rows.Scan(&item.ID, &item.IncidentID, &item.Severity, &item.TraceID, &item.ErrorSummary, &item.ObservedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (store *IncidentRepositoryV1) UpdateStatus(ctx context.Context, incidentID, current, next string) (domain.Incident, error) {
 	const query = `UPDATE incidents SET status = $3, updated_at = NOW() WHERE id = $1 AND status = $2
 RETURNING id::text, fingerprint, service_name, environment, severity, status,

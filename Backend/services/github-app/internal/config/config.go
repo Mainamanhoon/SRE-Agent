@@ -12,6 +12,7 @@ import (
 
 type Config struct {
 	HTTPAddress, Environment, Version, APIBaseURL, PrivateKeyPEM, WebhookSecret, APIAuthToken string
+	DatabaseURL, RepairRunServiceURL, IncidentServiceURL                                      string
 	AppID                                                                                     int64
 	APIAuthEnabled                                                                            bool
 	BodyLimitBytes                                                                            int64
@@ -20,7 +21,7 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	config := Config{HTTPAddress: env("HTTP_ADDRESS", ":4050"), Environment: env("APP_ENV", "development"), Version: env("SERVICE_VERSION", "local"), APIBaseURL: env("GITHUB_API_URL", "https://api.github.com"), WebhookSecret: os.Getenv("GITHUB_WEBHOOK_SECRET"), APIAuthToken: os.Getenv("API_AUTH_TOKEN")}
+	config := Config{HTTPAddress: env("HTTP_ADDRESS", ":4050"), Environment: env("APP_ENV", "development"), Version: env("SERVICE_VERSION", "local"), APIBaseURL: env("GITHUB_API_URL", "https://api.github.com"), WebhookSecret: os.Getenv("GITHUB_WEBHOOK_SECRET"), APIAuthToken: os.Getenv("API_AUTH_TOKEN"), DatabaseURL: os.Getenv("DATABASE_URL"), RepairRunServiceURL: env("REPAIR_RUN_SERVICE_URL", "http://localhost:4070"), IncidentServiceURL: env("INCIDENT_SERVICE_URL", "http://localhost:4020")}
 	var err error
 	if config.AppID, err = integer64("GITHUB_APP_ID", 0, 1, 1<<62); err != nil {
 		return Config{}, err
@@ -52,8 +53,8 @@ func Load() (Config, error) {
 	if config.ShutdownTimeout, err = duration("SHUTDOWN_TIMEOUT", 10*time.Second); err != nil {
 		return Config{}, err
 	}
-	if config.AppID <= 0 || config.PrivateKeyPEM == "" || len(config.WebhookSecret) < 32 {
-		return Config{}, errors.New("GitHub App id, private key, and a 32-character webhook secret are required")
+	if config.AppID <= 0 || config.PrivateKeyPEM == "" || len(config.WebhookSecret) < 32 || config.DatabaseURL == "" {
+		return Config{}, errors.New("GitHub App id, private key, a database URL, and a 32-character webhook secret are required")
 	}
 	if config.APIAuthEnabled && len(config.APIAuthToken) < 32 {
 		return Config{}, errors.New("API_AUTH_TOKEN must contain at least 32 characters")

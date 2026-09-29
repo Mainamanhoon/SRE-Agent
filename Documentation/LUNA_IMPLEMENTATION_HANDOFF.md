@@ -293,6 +293,8 @@ explicitly changes the priority.
 
 ## Milestone 1 — continuous integration and release evidence
 
+Status: implemented locally; first GitHub Actions run and version-tag GHCR publication are pending.
+
 ### Objective
 
 Make every claimed verification reproducible on a clean runner and make container artifacts
@@ -1041,10 +1043,17 @@ application logic.
 - GET /api/v1/health/ready
 - GET /api/v1/system
 - POST /api/v1/incidents/candidates
+- GET /api/v1/incidents
 - GET /api/v1/incidents/:incidentId
+- GET /api/v1/incidents/:incidentId/occurrences
+- GET /api/v1/incidents/:incidentId/actions
+- PATCH /api/v1/incidents/:incidentId/status
 - POST /api/v1/diagnoses
 - POST /api/v1/repairs
 - GET /api/v1/repairs/:repairRunId
+- GET /api/v1/repair-runs
+- GET /api/v1/repair-runs/:repairRunId
+- GET /api/v1/repair-runs/:repairRunId/events
 
 ### Incident detector
 
@@ -1091,6 +1100,9 @@ application logic.
 - POST /api/v1/deliveries
 - GET /api/v1/source-archives
 - POST /api/v1/webhooks/github
+
+The webhook endpoint requires the GitHub `X-GitHub-Delivery` header and a valid
+`X-Hub-Signature-256`; it acknowledges only after durable PostgreSQL acceptance.
 
 ### Repair worker
 
@@ -1338,17 +1350,34 @@ A slice is done only when all applicable statements are true:
 
 ---
 
-## 17. Recommended immediate next task
+## 17. Implementation status (2026-09-24)
 
-Start with Milestone 1, Slice A: reproducible pull-request CI. It creates a safety net for every later
-Luna session and requires no production credentials. Then implement Milestone 2 in small slices:
+The numbered milestones have now been implemented as far as this repository can verify locally:
 
-1. repair-run domain, contracts, migrations, and repository tests;
-2. repair-run HTTP API, auth, rate limiting, health, readiness, and metrics;
-3. repair-worker projection gateway and idempotent stage events;
-4. control API facade routes;
-5. real Temporal controlled-dependency projection test;
-6. documentation and deployment wiring.
+- Milestone 1: CI/release workflow, container builds, schema/compose validation hooks, and test gates are present; all Compose profile images build locally and the first hosted GitHub Actions run/tag publication remain external evidence.
+- Milestone 2: durable PostgreSQL repair-run projection, idempotent stage events, keyset APIs, and controlled Temporal integration test are present.
+- Milestone 3: signed GitHub webhook acceptance, durable deduplication/outbox leases/retries/dead letters, installation state, and outcome reconciliation are present.
+- Milestone 4: operational frontend queue, incident detail/timeline, repair-run timeline, bounded repair start, same-origin API proxy, and frontend tests are present.
+- Milestone 5: source archive provider and secure commit-pinned tar extraction with traversal, link, size, file-count, read-only, and cleanup controls are present.
+- Milestone 6: conservative eligibility/change/delivery policy contracts and implementations are present; human approval is required for risky delivery and auto-merge is disabled.
+- Milestone 7: artifact/result durability contract and a bounded filesystem adapter are present. Production object storage, signed URLs, and pod-restart acceptance still require deployment credentials/infrastructure.
+- Milestone 8: DeepSeek remains the configured real harness; an OpenAI-compatible provider-neutral adapter, explicit fake adapter boundary, benchmark fixture, and benchmark runner are present. Live provider comparisons require credentials and a benchmark environment.
+- Milestone 9: reconciliation contract boundaries, Prometheus alerts, and a Grafana overview dashboard are present. A deployed scheduler and historical alert validation remain environment-dependent.
+- Milestone 10: the pinned k6 constant-arrival-rate acceptance test targets 1,667 requests/second (100,000/minute) with explicit p95/p99/error/drop thresholds. The repository cannot certify those results without the target cluster.
+- Milestone 11: deployment manifests, migration jobs, runbooks, and acceptance checks are present; live GitHub, managed database, Temporal, registry, Kubernetes, and load gates remain pending.
+
+Local verification for this checkpoint includes TypeScript lint/typecheck/tests, Go format/vet/tests for changed modules, PostgreSQL migration replay/integration tests, and Temporal controlled-time integration. Do not treat those checks as production SLO certification. External acceptance is the remaining gate, not an unimplemented code task.
+
+## 18. Recommended immediate next task
+
+The code milestones are complete locally. The next work is environment acceptance, not another broad
+implementation pass:
+
+1. provision managed PostgreSQL, Temporal, object storage, Kubernetes, registry, and provider credentials;
+2. run migration replay, health/readiness/auth, webhook replay, and pod-restart artifact tests;
+3. run the real provider benchmark with fake harness selection disabled;
+4. run the k6 1,667 requests/second acceptance test and record p95/p99/error/drop evidence;
+5. deploy Prometheus/Grafana alerts and execute the reconciliation runbook.
 
 After that, complete GitHub webhook reconciliation before investing heavily in the frontend. The
 frontend depends on the durable repair-run timeline and final PR outcome state; building it earlier
@@ -1363,3 +1392,26 @@ The safest product sequence is therefore:
 This sequence preserves the existing architecture, gives each future session a bounded deliverable,
 and moves the repository from a complete backend repair path to an operable, auditable, and
 measurably scalable product.
+
+## 19. Readiness verification checkpoint (2026-09-25)
+
+The repository and local Compose product were tested end to end after the implementation milestones.
+The full JavaScript/TypeScript lint, typecheck, test, and build gates pass; the Go service modules
+pass format, vet, and uncached tests; Compose/profile builds pass; kubeconform reports 39 valid
+resources; and the pinned OTel Collector configuration validates.
+
+The local runtime was started with PostgreSQL migrations, incident detector/service, repair-run
+service, Temporal, control API, agent runner, frontend, telemetry, and the explicitly selected
+test-only fake harness. Readiness, authenticated/unauthenticated tool access, candidate ingestion,
+incident deduplication and occurrence replay, action projection, repair-run event idempotency, and
+Temporal workflow start/describe all passed.
+
+Testing caught a real idempotency defect: after a Temporal workflow had completed, retrying the same
+repair request could create a new run. The Temporal gateway now sets
+`workflowIdReusePolicy: "REJECT_DUPLICATE"`; live active and completed retries both return the
+original workflow/run identity.
+
+The product is locally test-ready, but not production-certified. Do not claim production readiness
+until live GitHub/provider credentials, managed PostgreSQL/Temporal/object storage, Kubernetes and
+gVisor scheduling, pod-restart artifact recovery, hosted CI/tag publication, and the k6 target of
+1,667 requests/second (100,000 requests/minute) have been executed and their evidence recorded.

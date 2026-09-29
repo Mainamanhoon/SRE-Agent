@@ -93,6 +93,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       INCIDENT_DETECTOR_URL: http://incident-detector:4010
       INCIDENT_SERVICE_URL: http://incident-service:4020
+      REPAIR_RUN_SERVICE_URL: http://repair-run-service:4070
       AGENT_RUNNER_URL: http://agent-runner:4040
       AGENT_RUNNER_REQUIRED: "false"
       TEMPORAL_ADDRESS: temporal:7233
@@ -104,9 +105,24 @@ services:
     ports:
       - "4000:4000"
     depends_on:
-      - incident-detector
-      - incident-service
-      - otel-collector
+      incident-detector:
+        condition: service_started
+      incident-service:
+        condition: service_started
+      repair-run-service:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Frontend/Dockerfile
+    ports:
+      - "5174:8080"
+    depends_on:
+      control-api:
+        condition: service_started
 
   incident-detector:
     build:
@@ -124,7 +140,8 @@ services:
     ports:
       - "4010:4010"
     depends_on:
-      - incident-service
+      incident-service:
+        condition: service_started
 
   incident-service:
     build:
@@ -141,8 +158,68 @@ services:
     ports:
       - "4020:4020"
     depends_on:
+      incident-migrations:
+        condition: service_completed_successfully
+
+  incident-migrations:
+    build:
+      context: ./Backend/services/incident-service
+      dockerfile: Dockerfile.migrate
+    environment:
+      DATABASE_URL: postgres://sre_agent:sre_agent_local@postgres:5432/sre_agent?sslmode=disable
+    depends_on:
       postgres:
         condition: service_healthy
+    restart: "no"
+
+  repair-run-migrations:
+    build:
+      context: ./Backend/services/repair-run-service
+      dockerfile: Dockerfile.migrate
+    environment:
+      DATABASE_URL: postgres://sre_agent:sre_agent_local@postgres:5432/sre_agent?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  repair-run-service:
+    build:
+      context: ./Backend/services/repair-run-service
+      dockerfile: Dockerfile
+    environment:
+      HTTP_ADDRESS: :4070
+      APP_ENV: development
+      SERVICE_VERSION: local
+      DATABASE_URL: postgres://sre_agent:sre_agent_local@postgres:5432/sre_agent?sslmode=disable
+      API_AUTH_ENABLED: "true"
+      API_AUTH_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
+      REQUESTS_PER_SECOND: ${REPAIR_RUN_SERVICE_RPS:-2000}
+      REQUEST_BURST: ${REPAIR_RUN_SERVICE_BURST:-4000}
+      DATABASE_MAX_CONNECTIONS: ${REPAIR_RUN_DATABASE_MAX_CONNECTIONS:-50}
+    ports:
+      - "4070:4070"
+    depends_on:
+      repair-run-migrations:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/repair-run-service", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  github-app-migrations:
+    profiles: ["github"]
+    build:
+      context: ./Backend/services/github-app
+      dockerfile: Dockerfile.migrate
+    environment:
+      DATABASE_URL: postgres://sre_agent:sre_agent_local@postgres:5432/sre_agent?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   repair-worker:
     build:
@@ -155,6 +232,7 @@ services:
       TEMPORAL_CONNECT_MAX_ATTEMPTS: 30
       SERVICE_VERSION: local
       INCIDENT_SERVICE_URL: http://incident-service:4020
+      REPAIR_RUN_SERVICE_URL: http://repair-run-service:4070
       AGENT_RUNNER_URL: http://agent-runner:4040
       SANDBOX_CONTROLLER_URL: http://sandbox-controller:4030
       GITHUB_APP_URL: http://github-app:4050
@@ -164,6 +242,8 @@ services:
     depends_on:
       temporal:
         condition: service_healthy
+      repair-run-service:
+        condition: service_started
 
   agent-runner:
     profiles: ["agent"]
@@ -251,10 +331,20 @@ services:
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_PRIVATE_KEY_BASE64: ${GITHUB_APP_PRIVATE_KEY_BASE64:-}
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      DATABASE_URL: postgres://sre_agent:sre_agent_local@postgres:5432/sre_agent?sslmode=disable
+      REPAIR_RUN_SERVICE_URL: http://repair-run-service:4070
+      INCIDENT_SERVICE_URL: http://incident-service:4020
       API_AUTH_ENABLED: "true"
       API_AUTH_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-internal-token-change-me-0001}
     ports:
       - "4050:4050"
+    depends_on:
+      github-app-migrations:
+        condition: service_completed_successfully
+      repair-run-service:
+        condition: service_healthy
+      incident-service:
+        condition: service_started
 
 volumes:
   sre_agent_postgres:

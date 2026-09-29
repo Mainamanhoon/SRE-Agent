@@ -12,14 +12,16 @@ import (
 )
 
 type Dependencies struct {
-	Deliveries     application.DeliveryCreator
-	Archives       application.SourceArchiveReader
-	Auth           application.RequestAuthenticator
-	Limiter        application.RequestLimiter
-	Webhooks       application.WebhookVerifier
-	Metrics        application.Metrics
-	Version        string
-	BodyLimitBytes int64
+	Deliveries      application.DeliveryCreator
+	Archives        application.SourceArchiveReader
+	Auth            application.RequestAuthenticator
+	Limiter         application.RequestLimiter
+	Webhooks        application.WebhookVerifier
+	WebhookReceiver application.WebhookAcceptor
+	Readiness       application.ReadinessProbe
+	Metrics         application.Metrics
+	Version         string
+	BodyLimitBytes  int64
 }
 
 func NewHandler(dependencies Dependencies) http.Handler {
@@ -27,7 +29,11 @@ func NewHandler(dependencies Dependencies) http.Handler {
 	mux.HandleFunc("GET /health", func(writer http.ResponseWriter, _ *http.Request) {
 		writeJSON(writer, http.StatusOK, map[string]string{"status": "ok", "service": "github-app", "version": dependencies.Version})
 	})
-	mux.HandleFunc("GET /ready", func(writer http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /ready", func(writer http.ResponseWriter, request *http.Request) {
+		if dependencies.Readiness == nil || dependencies.Readiness.Ping(request.Context()) != nil {
+			writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+			return
+		}
 		writeJSON(writer, http.StatusOK, map[string]string{"status": "ready"})
 	})
 	mux.HandleFunc("GET /metrics", func(writer http.ResponseWriter, _ *http.Request) {
@@ -99,21 +105,33 @@ func NewHandler(dependencies Dependencies) http.Handler {
 			return
 		}
 		event := request.Header.Get("X-GitHub-Event")
-		if event == "" {
-			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "missing GitHub event"})
+		deliveryID := request.Header.Get("X-GitHub-Delivery")
+		if event == "" || deliveryID == "" || dependencies.WebhookReceiver == nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "missing GitHub delivery metadata"})
+			return
+		}
+		created, acceptErr := dependencies.WebhookReceiver.Accept(request.Context(), deliveryID, event, body)
+		if errors.Is(acceptErr, application.ErrInvalidRequest) {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid GitHub webhook payload"})
+			return
+		}
+		if errors.Is(acceptErr, application.ErrWebhookConflict) {
+			writeJSON(writer, http.StatusConflict, map[string]string{"error": "delivery id already used with different content"})
+			return
+		}
+		if acceptErr != nil {
+			dependencies.Metrics.Observe("failed")
+			writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "webhook delivery could not be persisted"})
 			return
 		}
 		dependencies.Metrics.Observe("webhook")
-		writeJSON(writer, http.StatusAccepted, map[string]string{"status": "accepted", "event": event})
+		writeJSON(writer, http.StatusAccepted, map[string]any{"status": "accepted", "event": event, "duplicate": !created})
 	})
 	return securityHeaders(authenticate(rateLimit(mux, dependencies.Limiter, dependencies.Metrics), dependencies.Auth))
 }
-func public(path string) bool {
-	return path == "/health" || path == "/ready" || path == "/metrics" || path == "/api/v1/webhooks/github"
-}
 func authenticate(next http.Handler, auth application.RequestAuthenticator) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if !public(request.URL.Path) && !auth.Authenticate(request.Header.Get("Authorization")) {
+		if !healthRoute(request.URL.Path) && request.URL.Path != "/api/v1/webhooks/github" && !auth.Authenticate(request.Header.Get("Authorization")) {
 			writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "authentication is required"})
 			return
 		}
@@ -122,7 +140,7 @@ func authenticate(next http.Handler, auth application.RequestAuthenticator) http
 }
 func rateLimit(next http.Handler, limiter application.RequestLimiter, metrics application.Metrics) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if !public(request.URL.Path) && !limiter.Allow() {
+		if !healthRoute(request.URL.Path) && !limiter.Allow() {
 			metrics.Observe("rejected")
 			writer.Header().Set("Retry-After", "1")
 			writeJSON(writer, http.StatusTooManyRequests, map[string]string{"error": "request rate limit exceeded"})
@@ -130,6 +148,9 @@ func rateLimit(next http.Handler, limiter application.RequestLimiter, metrics ap
 		}
 		next.ServeHTTP(writer, request)
 	})
+}
+func healthRoute(path string) bool {
+	return path == "/health" || path == "/ready" || path == "/metrics"
 }
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

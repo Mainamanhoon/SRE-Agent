@@ -1,0 +1,26 @@
+{
+  "title": "SRE Agent overview",
+  "schemaVersion": 39,
+  "tags": ["sre-agent", "production"],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Repair runs by status",
+      "targets": [{ "expr": "sum by (status) (sre_repair_runs_total)" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Webhook processing failures",
+      "targets": [{ "expr": "rate(sre_github_webhook_deliveries_total{outcome=\"failed\"}[5m])" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Diagnosis latency",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(sre_agent_diagnosis_duration_seconds_bucket[5m])))"
+        }
+      ]
+    }
+  ]
+}

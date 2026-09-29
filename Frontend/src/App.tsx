@@ -1,9 +1,19 @@
 import { useEffect, useState } from "react";
+import { ControlApiError, controlApi } from "./api/control-api";
+import { IncidentDetail } from "./features/IncidentDetail";
+import { IncidentQueue } from "./features/IncidentQueue";
+import { RepairRunDetail } from "./features/RepairRunDetail";
 
 type HealthState =
   | { kind: "loading" }
   | { kind: "online"; service: string; version: string }
+  | { kind: "unauthorized" }
   | { kind: "offline" };
+
+type Page =
+  | { kind: "queue" }
+  | { kind: "incident"; incidentId: string }
+  | { kind: "repair"; incidentId: string; repairRunId: string };
 
 const pipeline = [
   ["01", "Detect", "OpenTelemetry signals become deduplicated incidents."],
@@ -15,71 +25,91 @@ const pipeline = [
 
 export function App() {
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
+  const [page, setPage] = useState<Page>({ kind: "queue" });
 
   useEffect(() => {
     const controller = new AbortController();
-
-    fetch("/api/v1/health", { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Backend is unavailable");
-        return response.json() as Promise<{ service: string; version: string }>;
-      })
-      .then((result) => {
-        setHealth({ kind: "online", service: result.service, version: result.version });
-      })
+    controlApi
+      .health(controller.signal)
+      .then((result) =>
+        setHealth({ kind: "online", service: result.service, version: result.version }),
+      )
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setHealth({ kind: "offline" });
+        if (controller.signal.aborted) return;
+        setHealth(
+          error instanceof ControlApiError && (error.status === 401 || error.status === 403)
+            ? { kind: "unauthorized" }
+            : { kind: "offline" },
+        );
       });
-
     return () => controller.abort();
   }, []);
 
   const statusLabel =
-    health.kind === "loading" ? "Connecting" : health.kind === "online" ? "Online" : "Offline";
+    health.kind === "loading"
+      ? "Connecting"
+      : health.kind === "online"
+        ? "Online"
+        : health.kind === "unauthorized"
+          ? "Access required"
+          : "Offline";
+  const healthService = health.kind === "online" ? health.service : "Control API";
+  const healthVersion = health.kind === "online" ? health.version : "—";
 
   return (
     <main>
       <nav className="nav" aria-label="Primary navigation">
-        <a className="brand" href="#top">
+        <button
+          className="brand brand-button"
+          type="button"
+          onClick={() => setPage({ kind: "queue" })}
+        >
           <span className="brand-mark">SRE</span>
           <span>Agent Console</span>
-        </a>
-        <a href="#pipeline">Pipeline</a>
+        </button>
+        <div className="nav-links">
+          <button type="button" onClick={() => setPage({ kind: "queue" })}>
+            Incidents
+          </button>
+          <a href="#pipeline">Pipeline</a>
+        </div>
       </nav>
 
-      <section className="hero" id="top">
+      <section className="hero console-hero" id="top">
         <div>
           <p className="eyebrow">AUTONOMOUS INCIDENT RESPONSE</p>
           <h1>From production failure to verified fix.</h1>
           <p className="lede">
             Correlate telemetry, inspect the deployed code, reproduce the fault, and prepare a
-            reviewable pull request with an evidence trail.
+            reviewable pull request with a durable evidence trail.
           </p>
           <div className="hero-actions">
-            <a className="primary-button" href="#pipeline">
-              Explore the pipeline
-            </a>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => setPage({ kind: "queue" })}
+            >
+              Open incident queue
+            </button>
             <span className={`status status-${health.kind}`}>
               <span className="status-dot" aria-hidden="true" />
               Backend {statusLabel}
             </span>
           </div>
         </div>
-
         <aside className="signal-card" aria-label="System status">
           <div className="signal-card-header">
             <span>CONTROL PLANE</span>
-            <span>FOUNDATION</span>
+            <span>{statusLabel.toUpperCase()}</span>
           </div>
           <dl>
             <div>
               <dt>Service</dt>
-              <dd>{health.kind === "online" ? health.service : "sre-agent-backend"}</dd>
+              <dd>{healthService}</dd>
             </div>
             <div>
               <dt>Version</dt>
-              <dd>{health.kind === "online" ? health.version : "local"}</dd>
+              <dd>{healthVersion}</dd>
             </div>
             <div>
               <dt>Autonomy</dt>
@@ -87,6 +117,33 @@ export function App() {
             </div>
           </dl>
         </aside>
+      </section>
+
+      <section className="workspace-section" aria-label="Incident operations">
+        {page.kind === "queue" && (
+          <IncidentQueue onSelect={(incidentId) => setPage({ kind: "incident", incidentId })} />
+        )}
+        {page.kind === "incident" && (
+          <IncidentDetail
+            incidentId={page.incidentId}
+            onBack={() => setPage({ kind: "queue" })}
+            onRepairRun={(repairRunId) =>
+              setPage({ kind: "repair", incidentId: page.incidentId, repairRunId })
+            }
+          />
+        )}
+        {page.kind === "repair" && (
+          <RepairRunDetail
+            repairRunId={page.repairRunId}
+            onBack={() => setPage({ kind: "incident", incidentId: page.incidentId })}
+          />
+        )}
+        {health.kind === "unauthorized" && (
+          <p className="auth-notice" role="status">
+            Access is mediated by your organization’s sign-in gateway. No service credential is
+            stored in this browser.
+          </p>
+        )}
       </section>
 
       <section className="pipeline-section" id="pipeline">

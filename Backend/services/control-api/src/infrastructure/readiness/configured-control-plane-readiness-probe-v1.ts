@@ -7,6 +7,7 @@ import {
 export interface ControlPlaneReadinessSettings {
   incidentDetectorUrl: string;
   incidentServiceUrl: string;
+  repairRunServiceUrl: string;
   agentRunnerUrl: string;
   temporalAddress: string;
   serviceToken: string;
@@ -29,6 +30,11 @@ export class ConfiguredControlPlaneReadinessProbeV1 extends ControlPlaneReadines
       this.httpCheck(
         "incidentService",
         new URL("/ready", this.settings.incidentServiceUrl),
+        signal,
+      ),
+      this.httpCheck(
+        "repairRunService",
+        new URL("/ready", this.settings.repairRunServiceUrl),
         signal,
       ),
       this.temporalCheck(),

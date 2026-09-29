@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import type { ControlApiQueryService } from "./application/contracts/control-api-query-service.js";
 import type { ControlPlaneGateway } from "./application/contracts/control-plane-gateway.js";
 import type { ControlPlaneReadinessProbe } from "./application/contracts/control-plane-readiness-probe.js";
+import type { RepairRunProjectionGateway } from "./application/contracts/repair-run-projection-gateway.js";
 import type { RepairWorkflowGateway } from "./application/contracts/repair-workflow-gateway.js";
 import type { RequestAuthenticator } from "./application/contracts/request-authenticator.js";
 import type { RequestRateLimiter } from "./application/contracts/request-rate-limiter.js";
@@ -11,11 +12,13 @@ import { ControlApiQueryServiceV1 } from "./application/implementations/control-
 import { TokenBucketRequestRateLimiterV1 } from "./application/implementations/token-bucket-request-rate-limiter-v1.js";
 import type { AppConfig } from "./config.js";
 import { FetchControlPlaneGatewayV1 } from "./infrastructure/http/fetch-control-plane-gateway-v1.js";
+import { FetchRepairRunProjectionGatewayV1 } from "./infrastructure/http/fetch-repair-run-projection-gateway-v1.js";
 import { ConfiguredControlPlaneReadinessProbeV1 } from "./infrastructure/readiness/configured-control-plane-readiness-probe-v1.js";
 import { SystemClock } from "./infrastructure/system-clock.js";
 import { TemporalRepairWorkflowGatewayV1 } from "./infrastructure/temporal/temporal-repair-workflow-gateway-v1.js";
 import { registerControlPlaneRoutes } from "./presentation/register-control-plane-routes.js";
 import { registerRepairRoutes } from "./presentation/register-repair-routes.js";
+import { registerRepairRunRoutes } from "./presentation/register-repair-run-routes.js";
 import { registerSystemRoutes } from "./presentation/register-system-routes.js";
 
 export interface AppDependencies {
@@ -25,6 +28,7 @@ export interface AppDependencies {
   authenticator: RequestAuthenticator;
   rateLimiter: RequestRateLimiter;
   workflows?: RepairWorkflowGateway;
+  repairRuns?: RepairRunProjectionGateway;
 }
 
 export function buildApp(
@@ -51,15 +55,23 @@ export function buildApp(
     dependencies.authenticator,
     dependencies.rateLimiter,
   );
-  registerRepairRoutes(
-    app,
+  const workflows =
     dependencies.workflows ??
-      new TemporalRepairWorkflowGatewayV1({
-        address: config.TEMPORAL_ADDRESS,
-        namespace: config.TEMPORAL_NAMESPACE,
-        taskQueue: config.TEMPORAL_TASK_QUEUE,
-      }),
-  );
+    new TemporalRepairWorkflowGatewayV1({
+      address: config.TEMPORAL_ADDRESS,
+      namespace: config.TEMPORAL_NAMESPACE,
+      taskQueue: config.TEMPORAL_TASK_QUEUE,
+    });
+  const repairRuns =
+    dependencies.repairRuns ??
+    new FetchRepairRunProjectionGatewayV1({
+      baseUrl: config.REPAIR_RUN_SERVICE_URL,
+      serviceToken: config.INTERNAL_SERVICE_TOKEN,
+      timeoutMs: config.DOWNSTREAM_TIMEOUT_MS,
+      maxResponseBytes: config.DOWNSTREAM_MAX_RESPONSE_BYTES,
+    });
+  registerRepairRoutes(app, workflows, repairRuns);
+  registerRepairRunRoutes(app, repairRuns);
   registerSystemRoutes(app, dependencies.queries);
 
   return app;
@@ -86,9 +98,16 @@ function createDependencies(config: AppConfig): AppDependencies {
       timeoutMs: config.DOWNSTREAM_TIMEOUT_MS,
       maxResponseBytes: config.DOWNSTREAM_MAX_RESPONSE_BYTES,
     }),
+    repairRuns: new FetchRepairRunProjectionGatewayV1({
+      baseUrl: config.REPAIR_RUN_SERVICE_URL,
+      serviceToken: config.INTERNAL_SERVICE_TOKEN,
+      timeoutMs: config.DOWNSTREAM_TIMEOUT_MS,
+      maxResponseBytes: config.DOWNSTREAM_MAX_RESPONSE_BYTES,
+    }),
     readiness: new ConfiguredControlPlaneReadinessProbeV1({
       incidentDetectorUrl: config.INCIDENT_DETECTOR_URL,
       incidentServiceUrl: config.INCIDENT_SERVICE_URL,
+      repairRunServiceUrl: config.REPAIR_RUN_SERVICE_URL,
       agentRunnerUrl: config.AGENT_RUNNER_URL,
       temporalAddress: config.TEMPORAL_ADDRESS,
       serviceToken: config.INTERNAL_SERVICE_TOKEN,

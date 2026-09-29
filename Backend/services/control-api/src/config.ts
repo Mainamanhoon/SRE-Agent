@@ -18,6 +18,7 @@ const environmentSchema = z
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().default("http://localhost:4318"),
     INCIDENT_DETECTOR_URL: z.string().url().default("http://localhost:4010"),
     INCIDENT_SERVICE_URL: z.string().url().default("http://localhost:4020"),
+    REPAIR_RUN_SERVICE_URL: z.string().url().default("http://localhost:4070"),
     AGENT_RUNNER_URL: z.string().url().default("http://localhost:4040"),
     AGENT_RUNNER_REQUIRED: booleanString,
     TEMPORAL_ADDRESS: z.string().min(1).default("localhost:7233"),
