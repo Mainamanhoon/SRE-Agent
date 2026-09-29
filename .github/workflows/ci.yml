@@ -24,6 +24,10 @@ jobs:
         with:
           node-version: 24.0.0
           cache: pnpm
+      - name: Install read-only tool dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ripgrep
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck

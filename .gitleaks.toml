@@ -1,0 +1,28 @@
+title = "SRE Agent secret scanning policy"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Explicitly non-secret development placeholders"
+regexTarget = "line"
+regexes = [
+  '''replace-with-at-least-32-characters''',
+  '''sre_agent_local''',
+  '''test-password''',
+  '''API_AUTH_TOKEN", "short''',
+]
+
+[[allowlists]]
+description = "Deterministic workflow event labels, not credentials"
+regexTarget = "line"
+regexes = [
+  '''delivery-policy-abstained-v1''',
+  '''verification-passed-v1''',
+]
+
+[[allowlists]]
+description = "Unit-test-only invalid token fixture"
+paths = [
+  '''Backend/services/repair-run-service/internal/config/config_test\.go''',
+]
