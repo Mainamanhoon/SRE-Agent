@@ -130,7 +130,7 @@ jobs:
         run: >-
           docker run --rm
           -v "$PWD/Backend/services/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro"
-          otel/opentelemetry-collector-contrib:0.162.0
+          otel/opentelemetry-collector-contrib:0.161.0
           validate --config=/etc/otelcol-contrib/config.yaml
 
   secrets:

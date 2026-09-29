@@ -156,7 +156,7 @@ retryable, and persist a result reference rather than large raw evidence.
   CRITICAL/HIGH vulnerability checks, per-image digest artifacts, and a summary that identifies
   migration execution as a deployment gate.
 - Verified locally: actionlint 1.7.7, docker compose config --quiet, strict kubeconform 0.6.7
-  against 31 resources, OTel Collector 0.162.0 config validation, and git diff --check passed.
+  against 31 resources, OTel Collector 0.161.0 config validation, and git diff --check passed.
 - Still pending: The workflow has not yet run in GitHub Actions; GHCR publication and registry
   permissions require a version tag and GitHub-hosted workflow execution.
 
