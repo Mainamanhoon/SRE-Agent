@@ -227,9 +227,11 @@ jobs:
           file: ${{ matrix.image.dockerfile }}
           push: ${{ startsWith(github.ref, 'refs/tags/v') }}
           load: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-          tags: ${{ steps.image.outputs.prefix }}/${{ matrix.image.name }}:${{ github.sha }}
-          sbom: true
-          provenance: true
+          tags: |
+            ${{ steps.image.outputs.prefix }}/${{ matrix.image.name }}:${{ github.sha }}
+            ${{ startsWith(github.ref, 'refs/tags/v') && format('{0}/{1}:{2}', steps.image.outputs.prefix, matrix.image.name, github.ref_name) || '' }}
+          sbom: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          provenance: ${{ startsWith(github.ref, 'refs/tags/v') }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Scan built image for vulnerabilities
