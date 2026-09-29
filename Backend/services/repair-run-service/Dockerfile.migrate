@@ -1,3 +1,5 @@
 FROM postgres:17.11-alpine3.24
 COPY migrations /migrations
-CMD ["/bin/sh", "-ec", "for file in /migrations/*.sql; do psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$file\"; done"]
+RUN rm -f /usr/local/bin/gosu
+ENTRYPOINT ["/bin/sh", "-ec"]
+CMD ["for file in /migrations/*.sql; do psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"$file\"; done"]
