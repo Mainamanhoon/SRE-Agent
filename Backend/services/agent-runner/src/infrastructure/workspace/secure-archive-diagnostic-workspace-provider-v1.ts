@@ -59,7 +59,11 @@ export class SecureArchiveDiagnosticWorkspaceProviderV1 extends DiagnosticWorksp
 
   public override async release(handle: WorkspaceHandle): Promise<void> {
     const root = this.resolvePath(handle);
-    await chmod(root, 0o700).catch(() => undefined);
+    // The snapshot is deliberately read-only while the agent uses it. Restore
+    // ownership permissions recursively before cleanup; chmodding only the
+    // top-level directory leaves nested read-only directories undeletable on
+    // Linux runners and can leak the whole snapshot after a successful run.
+    await this.makeWritable(root).catch(() => undefined);
     await rm(root, { recursive: true, force: true });
   }
 
@@ -129,5 +133,15 @@ export class SecureArchiveDiagnosticWorkspaceProviderV1 extends DiagnosticWorksp
       else await chmod(path, 0o444);
     }
     await chmod(root, 0o555);
+  }
+
+  private async makeWritable(root: string): Promise<void> {
+    const entries = await readdir(root, { withFileTypes: true });
+    for (const entry of entries) {
+      const path = join(root, entry.name);
+      if (entry.isDirectory()) await this.makeWritable(path);
+      else await chmod(path, 0o600);
+    }
+    await chmod(root, 0o700);
   }
 }
