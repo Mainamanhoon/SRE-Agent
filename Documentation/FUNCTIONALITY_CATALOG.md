@@ -20,7 +20,7 @@ GitHub, and Kubernetes-cluster acceptance still depends on deployment credential
 
 | Workstream | Current state | What is available now | Main remaining work |
 | --- | --- | --- | --- |
-| CI and release evidence | Implemented | Pull-request language checks, PostgreSQL migration replay, strict manifests/collector validation, secret scan, image SBOM/provenance, vulnerability scan, and immutable release digests | Hosted non-image gates are green; image publication is blocked by hosted image-job failures and requires a successful tagged run |
+| CI and release evidence | Verified | Pull-request language checks, PostgreSQL migration replay, strict manifests/collector validation, secret scan, image SBOM/provenance, vulnerability scan, immutable release digests, and tagged GHCR publication | Run managed-environment deployment acceptance and retain release evidence |
 | Repository and service foundation | Verified | Monorepo, shared commands, independently deployable services, Dockerfiles, Compose, clean architecture boundaries, and Kubernetes core-service manifests | CI/CD and environment-specific ingress/network/secret overlays |
 | Incident detection and storage | Verified | Candidate validation, normalization, fingerprinting, authenticated durable handoff, bounded retry, PostgreSQL persistence, deduplication, and incident reads | Run target-environment database integration and capacity tests |
 | Durable orchestration | Verified | Complete Temporal diagnose/plan/sandbox/verify/deliver state machine, incident transitions, retry policy, idempotent run IDs, health endpoints, cleanup, and PostgreSQL repair-run projection | Deploy and validate reconciliation scheduling and historical alert behavior |
@@ -349,14 +349,19 @@ retryable, and persist a result reference rather than large raw evidence.
   managed dependencies, Kubernetes/gVisor, object-storage restart tests, and sustained 100k
   requests/minute SLO evidence remain external acceptance gates.
 
-### 2026-09-30 - Hosted CI portability and durable tool audit boundary
+### 2026-09-30 - Hosted CI portability, release publication, and durable tool audit boundary
 
-- Hosted GitHub Actions non-image gates were rerun after two portability fixes: the JavaScript
-  tool test now uses the CI-provided absolute `ripgrep` path, and secure diagnostic workspace
-  cleanup recursively restores permissions before removal. The latest hosted run passed the
-  JavaScript/TypeScript, Go, manifest, and secret-scan jobs; its container image matrix still
-  requires hosted-log/registry permissions and a clean tagged run before GHCR publication can be
-  claimed.
+- Hosted GitHub Actions exposed and fixed several portability defects: the JavaScript tool test
+  now uses the CI-provided absolute `ripgrep` path; secure diagnostic workspace cleanup recursively
+  restores read-only snapshot permissions; the Trivy action uses a resolvable version tag; nested
+  Dockerfiles use repository-relative paths; BuildKit attestations are enabled only for pushed
+  release images; and vulnerable Go, Node, Alpine, PostgreSQL, and collector dependencies were
+  refreshed. Final hosted run [36637350869](https://github.com/Mainamanhoon/SRE-Agent/actions/runs/36637350869)
+  passed all language, manifest, secret, image-build, and vulnerability-scan jobs.
+- Annotated tag `v0.1.0` was pushed. Release run
+  [36638076419](https://github.com/Mainamanhoon/SRE-Agent/actions/runs/36638076419) passed with
+  SBOM/provenance and immutable digest evidence. Registry manifest checks confirmed all 15 matrix
+  images are published under `ghcr.io/mainamanhoon/sre-agent/*:v0.1.0`.
 - Added `HttpRepairToolAuditSinkV1`, which records bounded metadata-only tool invocations as
   idempotent `tool_invocation` events in the durable repair-run PostgreSQL projection. Production
   Kubernetes configuration enables this sink; local Compose keeps the JSON-lines sink by default

@@ -1419,11 +1419,10 @@ gVisor scheduling, pod-restart artifact recovery, hosted CI/tag publication, and
 ## 20. Production-scope execution checkpoint (2026-09-30)
 
 This checkpoint records the first hosted workflow execution and the remaining external gates. The
-hosted JavaScript/TypeScript, Go, manifest, and secret-scan jobs passed after two CI portability
-fixes: CI installs and selects an absolute `ripgrep` binary, and secure diagnostic workspace
-cleanup recursively restores read-only snapshot permissions before removal. The image matrix still
-failed in the hosted run, so no GHCR image or release tag is claimed until a clean tagged run has
-completed with registry permissions and image-scan evidence.
+hosted JavaScript/TypeScript, Go, manifest, secret-scan, container-build, and vulnerability-scan
+jobs passed after CI portability and dependency-baseline fixes. Annotated tag `v0.1.0` release run
+[36638076419](https://github.com/Mainamanhoon/SRE-Agent/actions/runs/36638076419) passed, and registry
+manifest checks confirmed all 15 GHCR images under `ghcr.io/mainamanhoon/sre-agent/*:v0.1.0`.
 
 The agent runner now has an explicit durable audit boundary. `HttpRepairToolAuditSinkV1` posts
 bounded metadata-only `tool_invocation` events to the repair-run service, whose PostgreSQL event
@@ -1434,7 +1433,8 @@ is durable audit storage for tool metadata; it does not by itself provide distri
 
 The current implementation status for the user's production checklist is:
 
-1. Hosted CI is partially evidenced; the first clean tagged GHCR publication is pending.
+1. Hosted CI and the first tagged GHCR publication are complete for `v0.1.0`; future releases still
+   require the same hosted evidence gates.
 2. Managed PostgreSQL, Temporal, Kubernetes, registry, and object storage are deployment gates,
    not available in this workspace.
 3. Live GitHub App acceptance needs an installed test App and disposable repository.
