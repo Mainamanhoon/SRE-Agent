@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS build
+FROM node:22.23.3-bookworm-slim AS build
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -13,10 +13,14 @@ RUN pnpm install --frozen-lockfile --filter @sre-agent/control-api...
 COPY Backend/services/control-api Backend/services/control-api
 RUN pnpm --filter @sre-agent/control-api build && pnpm --filter @sre-agent/control-api deploy --legacy --prod /out
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:22.23.3-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
 WORKDIR /app
+RUN apt-get update \
+  && apt-get dist-upgrade --yes \
+  && npm install --global npm@12.1.0 \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=build --chown=node:node /out ./
 USER node
 EXPOSE 4000

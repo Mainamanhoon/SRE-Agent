@@ -1,4 +1,4 @@
-FROM otel/opentelemetry-collector-contrib:0.160.0
+FROM otel/opentelemetry-collector-contrib:0.162.0
 
 COPY config.yaml /etc/otelcol-contrib/config.yaml
 COPY --chown=10001:10001 storage/.keep /var/lib/otelcol/.keep

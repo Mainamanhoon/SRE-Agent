@@ -31,6 +31,9 @@
       "koffi",
       "node-pty",
       "protobufjs"
-    ]
+    ],
+    "overrides": {
+      "fflate": ">=0.8.3"
+    }
   }
 }

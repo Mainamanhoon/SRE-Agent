@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS build
+FROM node:24.21.0-bookworm-slim AS build
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -14,7 +14,7 @@ COPY Backend/services/agent-runner Backend/services/agent-runner
 RUN pnpm --filter @sre-agent/agent-runner build \
   && pnpm --filter @sre-agent/agent-runner deploy --legacy --prod /out
 
-FROM node:24-bookworm-slim AS runtime
+FROM node:24.21.0-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
 ENV AGENT_WORKSPACE_PATH=/workspace
@@ -22,7 +22,9 @@ ENV DEEPSEEK_HOME=/var/lib/agent-runner/dsh
 
 WORKDIR /app
 RUN apt-get update \
+  && apt-get dist-upgrade --yes \
   && apt-get install --yes --no-install-recommends ca-certificates git ripgrep \
+  && npm install --global npm@12.1.0 \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=build --chown=node:node /out ./
 COPY --from=build --chown=node:node /workspace/Backend/services/agent-runner/config ./config
