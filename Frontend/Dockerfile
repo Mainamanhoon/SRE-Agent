@@ -9,7 +9,7 @@ RUN pnpm install --frozen-lockfile --filter @sre-agent/frontend...
 COPY Frontend Frontend
 RUN pnpm --filter @sre-agent/frontend build
 
-FROM nginx:1.28-alpine
+FROM nginx:1.30.5-alpine3.24
 RUN apk upgrade --no-cache
 COPY Frontend/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /workspace/Frontend/dist /usr/share/nginx/html
