@@ -36,9 +36,10 @@ GitHub, and Kubernetes-cluster acceptance still depends on deployment credential
 
 ### Latest verification baseline
 
-- JavaScript/TypeScript changed services: 44 automated tests passing across the agent runner,
-  control API, and repair worker; repository-wide final verification is recorded in the latest journal entry.
-- Agent runner: 32 tests passing, plus TypeScript build/typecheck and repository-wide lint.
+- JavaScript/TypeScript services: 58 automated tests passing across the agent runner, control API,
+  frontend, and repair worker, with one intentionally skipped Temporal integration test; repository-wide
+  final verification is recorded in the latest journal entry.
+- Agent runner: 36 tests passing, plus TypeScript build/typecheck and repository-wide lint.
 - MCP subprocess smoke: all ten tools discovered; bounded repository read and audit emission passed.
 - Docker Compose configuration validation passed. Fresh production images were built for the
   control API, repair worker, incident service/migrator, GitHub App, sandbox controller, both
